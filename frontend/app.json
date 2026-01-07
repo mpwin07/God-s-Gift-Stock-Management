@@ -1,0 +1,32 @@
+{
+    "expo": {
+        "name": "God's Gift",
+        "slug": "gods-gift-app",
+        "version": "1.0.0",
+        "orientation": "portrait",
+        "icon": "./assets/icon.png",
+        "userInterfaceStyle": "light",
+        "splash": {
+            "image": "./assets/splash.png",
+            "resizeMode": "contain",
+            "backgroundColor": "#FDEAEF"
+        },
+        "assetBundlePatterns": [
+            "**/*"
+        ],
+        "ios": {
+            "supportsTablet": true,
+            "bundleIdentifier": "com.godsgift.app"
+        },
+        "android": {
+            "adaptiveIcon": {
+                "foregroundImage": "./assets/adaptive-icon.png",
+                "backgroundColor": "#FDEAEF"
+            },
+            "package": "com.godsgift.app"
+        },
+        "web": {
+            "favicon": "./assets/favicon.png"
+        }
+    }
+}

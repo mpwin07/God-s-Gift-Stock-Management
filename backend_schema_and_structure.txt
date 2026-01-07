@@ -1,0 +1,343 @@
+================================================================================
+GOD'S GIFT BATH SOAP - BACKEND SCHEMA AND STRUCTURE
+================================================================================
+
+DATABASE: MongoDB
+PURPOSE: Internal stock management and billing system
+
+================================================================================
+COLLECTIONS
+================================================================================
+
+1. USERS COLLECTION
+-------------------
+Collection Name: users
+Purpose: Store admin authentication credentials
+
+Fields:
+- _id: ObjectId (auto-generated, primary key)
+- username: String (required, unique, indexed)
+- password_hash: String (required) - bcrypt hashed password
+- full_name: String (required)
+- role: String (required, default: "admin")
+- created_at: DateTime (required, default: current timestamp)
+- is_active: Boolean (required, default: true)
+
+Indexes:
+- username (unique)
+
+Relationships: None
+
+Notes:
+- Only admin users for internal use
+- Passwords stored as bcrypt hashes
+- Future: can add role-based permissions
+
+
+2. PRODUCTS COLLECTION
+----------------------
+Collection Name: products
+Purpose: Master catalog of all products (Food & Soap)
+
+Fields:
+- _id: ObjectId (auto-generated, primary key)
+- name: String (required, unique)
+- category: String (required, enum: ["Food", "Soap"])
+- unit: String (required, enum: ["gms", "kg", "pcs"])
+- rate: Float (optional) - manually set by admin, price per unit
+- min_stock_alert: Integer (optional, default: 10) - threshold for low stock alerts
+- created_at: DateTime (required, default: current timestamp)
+- updated_at: DateTime (required, default: current timestamp)
+- is_active: Boolean (required, default: true)
+
+Indexes:
+- name (unique)
+- category
+- is_active
+
+Relationships:
+- Referenced by inventory collection (product_id)
+- Referenced by bill_items (product_id)
+
+Notes:
+- Rate is optional and manually configurable
+- Soft delete using is_active flag
+- Min stock alert threshold per product
+
+
+3. INVENTORY COLLECTION
+------------------------
+Collection Name: inventory
+Purpose: SINGLE SOURCE OF TRUTH for current stock levels
+
+Fields:
+- _id: ObjectId (auto-generated, primary key)
+- product_id: ObjectId (required, references products._id, unique)
+- current_stock: Float (required, default: 0) - current available quantity
+- unit: String (required) - denormalized from products for quick access
+- last_updated: DateTime (required, default: current timestamp)
+- last_updated_by: String (optional) - username of last modifier
+
+Indexes:
+- product_id (unique)
+- current_stock (for low stock queries)
+
+Relationships:
+- product_id references products._id
+
+Notes:
+- ONE record per product (1:1 with products)
+- Stock updates happen via:
+  a) Manual stock adjustments (PUT /inventory/{product_id})
+  b) Automatic deduction when bill is created
+- Denormalized unit field for performance
+- All stock queries MUST use this collection
+
+
+4. BILLS COLLECTION
+-------------------
+Collection Name: bills
+Purpose: Store all sales transactions (offline sales)
+
+Fields:
+- _id: ObjectId (auto-generated, primary key)
+- bill_number: String (required, unique, auto-generated) - format: "BILL-YYYYMMDD-XXXX"
+- batch_number: String (optional) - manual batch identifier
+- customer_name: String (required)
+- customer_phone: String (optional)
+- customer_address: String (optional)
+- bill_date: DateTime (required, default: current timestamp)
+- items: Array of Objects (required, min 1 item)
+  [
+    {
+      product_id: ObjectId (required, references products._id)
+      product_name: String (required, denormalized)
+      quantity: Float (required, > 0)
+      unit: String (required)
+      rate: Float (required) - rate at time of sale
+      item_total: Float (required) - quantity * rate
+    }
+  ]
+- bill_total: Float (required) - sum of all item_totals
+- order_source: String (required, default: "offline", enum: ["offline", "online"])
+- created_by: String (required) - admin username
+- created_at: DateTime (required, default: current timestamp)
+- notes: String (optional)
+
+Indexes:
+- bill_number (unique)
+- bill_date (descending, for recent bills)
+- customer_name
+- order_source
+
+Relationships:
+- items[].product_id references products._id
+- Linked to payments via bill_id
+
+Notes:
+- Bill number auto-generated using bill_sequences collection
+- Items array denormalizes product_name for historical accuracy
+- Rate captured at time of sale (not live product rate)
+- order_source allows future e-commerce integration
+- Stock automatically reduced on bill creation
+
+
+5. PAYMENTS COLLECTION
+-----------------------
+Collection Name: payments
+Purpose: Track payment status and details for each bill
+
+Fields:
+- _id: ObjectId (auto-generated, primary key)
+- bill_id: ObjectId (required, references bills._id, unique)
+- bill_number: String (required, denormalized)
+- bill_total: Float (required, denormalized)
+- payment_status: String (required, default: "Pending", enum: ["Pending", "Partial", "Completed"])
+- amount_paid: Float (required, default: 0)
+- balance_due: Float (required) - bill_total - amount_paid
+- payment_mode: String (optional, enum: ["Cash", "UPI", "Card", "Bank Transfer", "Other"])
+- payment_date: DateTime (optional) - date of last payment
+- updated_at: DateTime (required, default: current timestamp)
+- updated_by: String (optional) - admin username
+- notes: String (optional)
+
+Indexes:
+- bill_id (unique)
+- payment_status
+- payment_date
+
+Relationships:
+- bill_id references bills._id (1:1)
+
+Notes:
+- ONE payment record per bill
+- Created automatically when bill is created
+- Editable later via PUT /payments/{id}
+- balance_due calculated field
+- Denormalized bill_number and bill_total for quick access
+
+
+6. BILL_SEQUENCES COLLECTION
+-----------------------------
+Collection Name: bill_sequences
+Purpose: Generate auto-incrementing bill numbers
+
+Fields:
+- _id: String (required, format: "YYYYMMDD", primary key)
+- sequence: Integer (required, default: 0) - last used sequence number for the day
+
+Indexes:
+- _id (unique, primary key)
+
+Relationships: None
+
+Notes:
+- One document per day
+- Bill number format: BILL-YYYYMMDD-{sequence padded to 4 digits}
+- Example: BILL-20260103-0001
+- Atomic increment using findOneAndUpdate with $inc
+
+
+================================================================================
+DATA FLOW
+================================================================================
+
+1. CREATE BILL FLOW:
+   a) User creates bill with items
+   b) System validates product_ids exist
+   c) System checks inventory has sufficient stock
+   d) System generates bill_number using bill_sequences
+   e) System creates bill document
+   f) System creates payment document (status: Pending)
+   g) System reduces inventory.current_stock for each item
+   h) Transaction: All or nothing (rollback on failure)
+
+2. UPDATE PAYMENT FLOW:
+   a) User updates payment (amount_paid, payment_mode)
+   b) System calculates balance_due
+   c) System updates payment_status:
+      - Completed: balance_due = 0
+      - Partial: 0 < balance_due < bill_total
+      - Pending: balance_due = bill_total
+
+3. STOCK MANAGEMENT FLOW:
+   a) Manual stock update: PUT /inventory/{product_id}
+   b) Automatic deduction: On bill creation
+   c) Low stock alerts: Query inventory where current_stock < min_stock_alert
+
+4. DASHBOARD ANALYTICS:
+   a) Today's sales: Aggregate bills where bill_date = today
+   b) Pending payments: Count payments where payment_status != "Completed"
+   c) Product-wise sales: Aggregate bills.items by product_id
+
+
+================================================================================
+FUTURE E-COMMERCE READINESS
+================================================================================
+
+Schema supports future online orders WITHOUT redesign:
+
+1. bills.order_source: "online" vs "offline"
+2. bills.customer_phone, customer_address: Already present
+3. Can add new collection: customers (for registered users)
+4. Can add fields to bills:
+   - shipping_address
+   - delivery_status
+   - tracking_number
+5. inventory remains single source of truth
+
+
+================================================================================
+BACKEND FOLDER STRUCTURE
+================================================================================
+
+backend/
+├── app/
+│   ├── __init__.py
+│   ├── main.py                    # FastAPI app, CORS, routes registration
+│   ├── config.py                  # Settings (MongoDB URI, JWT secret from .env)
+│   ├── database.py                # MongoDB connection, get_database()
+│   │
+│   ├── models/                    # Pydantic models (request/response schemas)
+│   │   ├── __init__.py
+│   │   ├── user.py                # UserLogin, UserResponse
+│   │   ├── product.py             # ProductCreate, ProductUpdate, ProductResponse
+│   │   ├── inventory.py           # InventoryUpdate, InventoryResponse
+│   │   ├── bill.py                # BillCreate, BillItem, BillResponse
+│   │   └── payment.py             # PaymentUpdate, PaymentResponse
+│   │
+│   ├── routes/                    # API endpoints
+│   │   ├── __init__.py
+│   │   ├── auth.py                # POST /auth/login
+│   │   ├── products.py            # CRUD /products
+│   │   ├── inventory.py           # GET/PUT /inventory
+│   │   ├── bills.py               # GET/POST /bills
+│   │   ├── payments.py            # GET/PUT /payments
+│   │   └── dashboard.py           # GET /dashboard/stats, /dashboard/analytics
+│   │
+│   ├── services/                  # Business logic
+│   │   ├── __init__.py
+│   │   ├── auth_service.py        # verify_password, create_access_token
+│   │   └── bill_service.py        # create_bill (with stock deduction)
+│   │
+│   └── utils/
+│       ├── __init__.py
+│       └── security.py            # JWT encode/decode, password hashing
+│
+├── seed.py                         # Seed 15 products into database
+├── requirements.txt                # FastAPI, pymongo, pydantic, bcrypt, python-jose
+├── .env                            # MongoDB URI, admin credentials, JWT secret
+├── .env.example                    # Template for .env
+└── README.md                       # Setup instructions
+
+
+================================================================================
+API ENDPOINTS SUMMARY
+================================================================================
+
+AUTH:
+POST   /auth/login                 # Login, returns JWT token
+
+PRODUCTS:
+GET    /products                   # List all products (with filters)
+POST   /products                   # Create new product
+GET    /products/{id}              # Get product by ID
+PUT    /products/{id}              # Update product (including rate)
+DELETE /products/{id}              # Soft delete product
+
+INVENTORY:
+GET    /inventory                  # List all stock levels
+GET    /inventory/{product_id}     # Get stock for specific product
+PUT    /inventory/{product_id}     # Update stock manually
+GET    /inventory/low-stock        # Get products below min_stock_alert
+
+BILLS:
+GET    /bills                      # List all bills (with filters: date, customer, payment_status)
+POST   /bills                      # Create new bill (auto-reduces stock)
+GET    /bills/{id}                 # Get bill details
+
+PAYMENTS:
+GET    /payments                   # List all payments (with filters)
+GET    /payments/{id}              # Get payment by ID
+PUT    /payments/{id}              # Update payment (amount, status, mode)
+
+DASHBOARD:
+GET    /dashboard/stats            # Today's sales, total bills, pending payments, low stock count
+GET    /dashboard/analytics        # Product-wise sales analysis
+
+
+================================================================================
+SECURITY & VALIDATION
+================================================================================
+
+1. Authentication: JWT tokens (Bearer)
+2. Password: bcrypt hashing
+3. Input validation: Pydantic models
+4. Stock validation: Check sufficient stock before bill creation
+5. Atomic operations: Use MongoDB transactions for bill creation
+6. CORS: Configured for React Native frontend
+
+
+================================================================================
+END OF SCHEMA DOCUMENT
+================================================================================
