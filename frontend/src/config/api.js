@@ -10,7 +10,8 @@
 
 // For web browser: use localhost
 // For physical device (Expo Go): use your computer's IP
-export const API_BASE_URL = 'http://192.168.31.157:8000';
+// For production APK: use production backend URL
+export const API_BASE_URL = 'https://god-s-gift-stock-management-8bz6.onrender.com';
 export const API_ENDPOINTS = {
     // Auth
     LOGIN: '/auth/login',
