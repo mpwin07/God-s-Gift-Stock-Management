@@ -155,22 +155,24 @@ const NewBillScreen = ({ navigation, route }) => {
     };
 
     // Add item with manually entered rate OR auto-calculated from grams
+    // CLEAN WEIGHT CALCULATION - explicit Number() conversion
     const confirmAddItem = () => {
-        const grams = parseFloat(itemGrams) || 0;
-        const qty = parseFloat(itemQuantity);
-        const baseWeight = selectedProduct.base_weight || 250;
-        const productRate = selectedProduct.rate || 0;
+        const grams = Number(itemGrams) || 0;
+        const qty = Number(itemQuantity) || 0;
+        const baseWeight = Number(selectedProduct.base_weight) || 250;
+        const productRate = Number(selectedProduct.rate) || 0;
 
         // Calculate rate: either use entered rate, or calculate from grams
-        let rate;
-        const customRate = itemRate.trim(); // FIX: Trim whitespace before checking
+        let rate = 0;
+        const customRateStr = itemRate.trim();
+        const customRate = Number(customRateStr);
 
-        if (customRate && parseFloat(customRate) > 0) {
+        if (customRateStr && customRate > 0) {
             // User manually entered a rate
-            rate = parseFloat(customRate);
+            rate = customRate;
         } else if (grams > 0 && productRate > 0) {
-            // Calculate from grams: (product rate / base weight) * grams entered
-            rate = Math.round((productRate / baseWeight) * grams * 100) / 100;
+            // Calculate from grams: (grams / baseWeight) * productRate
+            rate = Math.round((grams / baseWeight) * productRate * 100) / 100;
         } else {
             // Use product's default rate
             rate = productRate;
@@ -293,7 +295,10 @@ const NewBillScreen = ({ navigation, route }) => {
     };
 
     return (
-        <View style={styles.container}>
+        <KeyboardAvoidingView
+            style={styles.container}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
             <Header
                 title="New Bill"
                 onBackPress={() => navigation.goBack()}
@@ -580,16 +585,18 @@ const NewBillScreen = ({ navigation, route }) => {
                             <Text style={styles.pricePreviewLabel}>Calculated Price:</Text>
                             <Text style={styles.pricePreviewValue}>
                                 ₹{(() => {
-                                    const grams = parseFloat(itemGrams) || 0;
-                                    const qty = parseFloat(itemQuantity) || 1;
-                                    const baseWeight = selectedProduct?.base_weight || 250;
-                                    const productRate = selectedProduct?.rate || 0;
+                                    const grams = Number(itemGrams) || 0;
+                                    const qty = Number(itemQuantity) || 1;
+                                    const baseWeight = Number(selectedProduct?.base_weight) || 250;
+                                    const productRate = Number(selectedProduct?.rate) || 0;
+                                    const customRateStr = itemRate.trim();
+                                    const customRate = Number(customRateStr);
 
-                                    if (itemRate && parseFloat(itemRate) > 0) {
-                                        return (parseFloat(itemRate) * qty).toFixed(0);
+                                    if (customRateStr && customRate > 0) {
+                                        return Math.round(customRate * qty);
                                     } else if (grams > 0 && productRate > 0) {
-                                        const calcRate = (productRate / baseWeight) * grams;
-                                        return (calcRate * qty).toFixed(0);
+                                        const calcRate = (grams / baseWeight) * productRate;
+                                        return Math.round(calcRate * qty);
                                     }
                                     return '0';
                                 })()}
@@ -618,36 +625,28 @@ const NewBillScreen = ({ navigation, route }) => {
 
             {/* Confetti celebration on bill success */}
             <SuccessConfetti ref={confettiRef} />
-        </View>
+        </KeyboardAvoidingView>
     );
 };
 
 const styles = StyleSheet.create({
-    // MAIN CONTAINER - locks to viewport height
+    // MAIN CONTAINER - simple flex layout
     container: {
         flex: 1,
         backgroundColor: colors.background,
-        height: '100vh',
-        display: 'flex',
-        flexDirection: 'column',
-        overflow: 'hidden', // CRITICAL - prevents content from escaping
     },
 
-    // ZONE 1: Customer details - fixed, never scrolls
+    // Customer details section
     customerSection: {
         padding: spacing.md,
         paddingBottom: 0,
-        flexShrink: 0, // Never shrinks
         backgroundColor: colors.background,
     },
 
-    // ZONE 2: Items container - takes remaining space
+    // Items container - takes remaining space
     itemsContainer: {
-        flex: 1, // CRITICAL - takes all remaining space
-        display: 'flex',
-        flexDirection: 'column',
-        overflow: 'hidden', // Clip children
-        minHeight: 0, // Allows flex child to shrink below content size
+        flex: 1,
+        minHeight: 100,
     },
     itemsHeader: {
         flexDirection: 'row',
@@ -656,16 +655,14 @@ const styles = StyleSheet.create({
         paddingHorizontal: spacing.md,
         paddingVertical: spacing.sm,
         backgroundColor: colors.background,
-        flexShrink: 0, // Never shrinks
     },
     itemsScroll: {
-        flex: 1, // CRITICAL - takes remaining space in items container
-        overflow: 'auto', // Enables scrolling on web
+        flex: 1,
     },
     itemsScrollContent: {
         padding: spacing.md,
         paddingTop: 0,
-        paddingBottom: 200, // Extra space for navigation buttons on all devices
+        paddingBottom: 140, // Space for footer + navigation buttons
     },
 
     sectionTitle: {
