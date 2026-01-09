@@ -12,7 +12,6 @@ import {
     KeyboardAvoidingView,
     Platform,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import DateTimePickerModal from 'react-native-modal-datetime-picker';
 import Toast from 'react-native-toast-message';
 import Header from '../components/Header';
@@ -30,7 +29,6 @@ const NewBillScreen = ({ navigation, route }) => {
     const { user } = useAuth();
     const confettiRef = useRef(null);
     const duplicateData = route?.params?.duplicateData;
-    const insets = useSafeAreaInsets();
 
     const [products, setProducts] = useState([]);
     const [customerName, setCustomerName] = useState('');
@@ -295,7 +293,7 @@ const NewBillScreen = ({ navigation, route }) => {
     };
 
     return (
-        <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={styles.container}>
             <Header
                 title="New Bill"
                 onBackPress={() => navigation.goBack()}
@@ -620,7 +618,7 @@ const NewBillScreen = ({ navigation, route }) => {
 
             {/* Confetti celebration on bill success */}
             <SuccessConfetti ref={confettiRef} />
-        </SafeAreaView>
+        </View>
     );
 };
 
@@ -667,7 +665,7 @@ const styles = StyleSheet.create({
     itemsScrollContent: {
         padding: spacing.md,
         paddingTop: 0,
-        paddingBottom: 160, // INCREASED - space for footer + navigation buttons
+        paddingBottom: 200, // Extra space for navigation buttons on all devices
     },
 
     sectionTitle: {
@@ -742,7 +740,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'space-between',
         padding: spacing.md,
-        paddingBottom: spacing.xl, // FIXED - ensure space for Android navigation
+        paddingBottom: 24, // Extra padding for devices with navigation buttons
     },
     footerTotal: {
         flexDirection: 'column',
