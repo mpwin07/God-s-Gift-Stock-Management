@@ -12,6 +12,7 @@ import {
     KeyboardAvoidingView,
     Platform,
 } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import DateTimePickerModal from 'react-native-modal-datetime-picker';
 import Toast from 'react-native-toast-message';
 import Header from '../components/Header';
@@ -21,7 +22,7 @@ import Card from '../components/Card';
 import BillItem from '../components/BillItem';
 import SuccessConfetti from '../components/SuccessConfetti';
 import { colors, spacing, fontSize, borderRadius } from '../config/theme';
-import { getProducts, createBill } from '../api/endpoints';
+import { getProducts, createBill, getBills } from '../api/endpoints';
 import { useAuth } from '../context/AuthContext';
 import { successHaptic, mediumHaptic, warningHaptic } from '../utils/haptics';
 
@@ -29,10 +30,14 @@ const NewBillScreen = ({ navigation, route }) => {
     const { user } = useAuth();
     const confettiRef = useRef(null);
     const duplicateData = route?.params?.duplicateData;
+    const insets = useSafeAreaInsets();
 
     const [products, setProducts] = useState([]);
     const [customerName, setCustomerName] = useState('');
     const [customerPhone, setCustomerPhone] = useState('');
+    const [customerSuggestions, setCustomerSuggestions] = useState([]);
+    const [showSuggestions, setShowSuggestions] = useState(false);
+    const [recentCustomers, setRecentCustomers] = useState([]);
     const [batchNumber, setBatchNumber] = useState('');
     const [billDate, setBillDate] = useState(null); // Optional manual date
     const [showDatePicker, setShowDatePicker] = useState(false);
@@ -55,6 +60,7 @@ const NewBillScreen = ({ navigation, route }) => {
 
     useEffect(() => {
         loadProducts();
+        loadRecentCustomers();
     }, []);
 
     // Pre-fill form when duplicating a bill
@@ -73,6 +79,45 @@ const NewBillScreen = ({ navigation, route }) => {
         } catch (error) {
             Alert.alert('Error', 'Failed to load products');
         }
+    };
+
+    const loadRecentCustomers = async () => {
+        try {
+            const bills = await getBills({ limit: 200 });
+            // Extract unique customers with their most recent phone numbers
+            const customersMap = new Map();
+            bills.forEach(bill => {
+                if (bill.customer_name) {
+                    customersMap.set(bill.customer_name, {
+                        name: bill.customer_name,
+                        phone: bill.customer_phone || '',
+                    });
+                }
+            });
+            setRecentCustomers(Array.from(customersMap.values()));
+        } catch (error) {
+            // Silently fail - autocomplete is not critical
+            console.log('Failed to load customers:', error);
+        }
+    };
+
+    // Filter customer suggestions as user types
+    useEffect(() => {
+        if (customerName.trim().length >= 2) {
+            const filtered = recentCustomers.filter(customer =>
+                customer.name.toLowerCase().includes(customerName.toLowerCase())
+            );
+            setCustomerSuggestions(filtered);
+            setShowSuggestions(filtered.length > 0);
+        } else {
+            setShowSuggestions(false);
+        }
+    }, [customerName, recentCustomers]);
+
+    const selectCustomer = (customer) => {
+        setCustomerName(customer.name);
+        setCustomerPhone(customer.phone);
+        setShowSuggestions(false);
     };
 
     // Filter and sort products
@@ -120,9 +165,11 @@ const NewBillScreen = ({ navigation, route }) => {
 
         // Calculate rate: either use entered rate, or calculate from grams
         let rate;
-        if (itemRate && parseFloat(itemRate) > 0) {
+        const customRate = itemRate.trim(); // FIX: Trim whitespace before checking
+
+        if (customRate && parseFloat(customRate) > 0) {
             // User manually entered a rate
-            rate = parseFloat(itemRate);
+            rate = parseFloat(customRate);
         } else if (grams > 0 && productRate > 0) {
             // Calculate from grams: (product rate / base weight) * grams entered
             rate = Math.round((productRate / baseWeight) * grams * 100) / 100;
@@ -248,7 +295,7 @@ const NewBillScreen = ({ navigation, route }) => {
     };
 
     return (
-        <View style={styles.container}>
+        <SafeAreaView style={styles.container} edges={['top']}>
             <Header
                 title="New Bill"
                 onBackPress={() => navigation.goBack()}
@@ -257,12 +304,37 @@ const NewBillScreen = ({ navigation, route }) => {
             {/* ZONE 1: Fixed Customer Details - Never scrolls */}
             <View style={styles.customerSection}>
                 <Card>
-                    <Input
-                        label="Customer Name *"
-                        value={customerName}
-                        onChangeText={setCustomerName}
-                        placeholder="Enter customer name"
-                    />
+                    <View>
+                        <Input
+                            label="Customer Name *"
+                            value={customerName}
+                            onChangeText={setCustomerName}
+                            placeholder="Enter customer name"
+                            onFocus={() => customerName.length >= 2 && setShowSuggestions(true)}
+                        />
+                        {showSuggestions && customerSuggestions.length > 0 && (
+                            <View style={styles.suggestionsContainer}>
+                                <ScrollView
+                                    style={styles.suggestionsList}
+                                    keyboardShouldPersistTaps="handled"
+                                    nestedScrollEnabled
+                                >
+                                    {customerSuggestions.map((customer, index) => (
+                                        <TouchableOpacity
+                                            key={index}
+                                            style={styles.suggestionItem}
+                                            onPress={() => selectCustomer(customer)}
+                                        >
+                                            <Text style={styles.suggestionName}>{customer.name}</Text>
+                                            {customer.phone && (
+                                                <Text style={styles.suggestionPhone}>{customer.phone}</Text>
+                                            )}
+                                        </TouchableOpacity>
+                                    ))}
+                                </ScrollView>
+                            </View>
+                        )}
+                    </View>
                     <Input
                         label="Customer Phone"
                         value={customerPhone}
@@ -548,7 +620,7 @@ const NewBillScreen = ({ navigation, route }) => {
 
             {/* Confetti celebration on bill success */}
             <SuccessConfetti ref={confettiRef} />
-        </View>
+        </SafeAreaView>
     );
 };
 
@@ -595,7 +667,7 @@ const styles = StyleSheet.create({
     itemsScrollContent: {
         padding: spacing.md,
         paddingTop: 0,
-        paddingBottom: 120, // CRITICAL - space for footer button
+        paddingBottom: 160, // INCREASED - space for footer + navigation buttons
     },
 
     sectionTitle: {
@@ -670,7 +742,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'space-between',
         padding: spacing.md,
-        paddingBottom: Platform.OS === 'ios' ? spacing.xl : spacing.md,
+        paddingBottom: spacing.xl, // FIXED - ensure space for Android navigation
     },
     footerTotal: {
         flexDirection: 'column',
@@ -892,6 +964,44 @@ const styles = StyleSheet.create({
         fontSize: fontSize.sm,
         color: colors.primary,
         fontWeight: '600',
+    },
+
+    // Customer autocomplete styles
+    suggestionsContainer: {
+        position: 'absolute',
+        top: '100%',
+        left: 0,
+        right: 0,
+        zIndex: 1000,
+        backgroundColor: colors.surface,
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: colors.border,
+        borderTopWidth: 0,
+        maxHeight: 200,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.15,
+        shadowRadius: 8,
+        elevation: 5,
+    },
+    suggestionsList: {
+        maxHeight: 200,
+    },
+    suggestionItem: {
+        padding: spacing.md,
+        borderBottomWidth: 1,
+        borderBottomColor: colors.border,
+    },
+    suggestionName: {
+        fontSize: fontSize.md,
+        fontWeight: '600',
+        color: colors.text,
+        marginBottom: 2,
+    },
+    suggestionPhone: {
+        fontSize: fontSize.sm,
+        color: colors.textSecondary,
     },
 });
 
