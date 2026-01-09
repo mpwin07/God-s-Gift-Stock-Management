@@ -74,6 +74,15 @@ export const getBillById = async (id) => {
     return response.data;
 };
 
+export const deleteBill = async (id) => {
+    await apiClient.delete(API_ENDPOINTS.BILL_BY_ID(id));
+};
+
+export const deleteBillItem = async (billId, itemIndex) => {
+    const response = await apiClient.delete(`${API_ENDPOINTS.BILL_BY_ID(billId)}/items/${itemIndex}`);
+    return response.data;
+};
+
 // ============ PAYMENTS ============
 export const getPayments = async (params = {}) => {
     const response = await apiClient.get(API_ENDPOINTS.PAYMENTS, { params });
@@ -140,6 +149,8 @@ export default {
     getBills,
     createBill,
     getBillById,
+    deleteBill,
+    deleteBillItem,
     getPayments,
     getPaymentById,
     getPaymentByBill,

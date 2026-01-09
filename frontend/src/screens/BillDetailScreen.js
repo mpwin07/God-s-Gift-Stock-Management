@@ -16,7 +16,7 @@ import BillItem from '../components/BillItem';
 import Input from '../components/Input';
 import Button from '../components/Button';
 import { colors, spacing, fontSize, borderRadius } from '../config/theme';
-import { getBillById, getPaymentByBill, updatePayment } from '../api/endpoints';
+import { getBillById, getPaymentByBill, updatePayment, deleteBill, deleteBillItem } from '../api/endpoints';
 import Toast from 'react-native-toast-message';
 
 const BillDetailScreen = ({ route, navigation }) => {
@@ -39,7 +39,9 @@ const BillDetailScreen = ({ route, navigation }) => {
             ]);
             setBill(billData);
             setPayment(paymentData);
-            setAmountPaid(paymentData.amount_paid.toString());
+            if (paymentData) {
+                setAmountPaid(paymentData.amount_paid.toString());
+            }
         } catch (error) {
             Alert.alert('Error', 'Failed to load bill details');
             navigation.goBack();
@@ -48,7 +50,7 @@ const BillDetailScreen = ({ route, navigation }) => {
         }
     };
 
-    // Duplicate bill - navigate to NewBill with pre-filled data
+    // Duplicate bill
     const handleDuplicateBill = () => {
         navigation.navigate('NewBill', {
             duplicateData: {
@@ -59,14 +61,71 @@ const BillDetailScreen = ({ route, navigation }) => {
                     product_name: item.product_name,
                     quantity: item.quantity,
                     unit_price: item.unit_price,
+                    rate: item.rate, // Include rate
+                    grams: item.grams, // Include grams
                 })),
             }
         });
         Toast.show({ type: 'info', text1: 'Bill copied for new order' });
     };
 
-    // Generate and share PDF receipt
+    // Delete Bill
+    const handleDeleteBill = () => {
+        Alert.alert(
+            'Delete Bill',
+            'Are you sure? This will delete the bill permanently and RESTORE STOCK.',
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Delete',
+                    style: 'destructive',
+                    onPress: async () => {
+                        try {
+                            setLoading(true);
+                            await deleteBill(billId);
+                            Toast.show({ type: 'success', text1: 'Bill Deleted', text2: 'Stock restored' });
+                            navigation.goBack();
+                        } catch (error) {
+                            Alert.alert('Error', 'Failed to delete bill');
+                            setLoading(false);
+                        }
+                    }
+                }
+            ]
+        );
+    };
+
+    // Remove Item
+    const handleRemoveItem = (index) => {
+        Alert.alert(
+            'Remove Item',
+            'Remove this item? Stock will be restored.',
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Remove',
+                    style: 'destructive',
+                    onPress: async () => {
+                        try {
+                            const updatedBill = await deleteBillItem(billId, index);
+                            setBill(updatedBill);
+
+                            // Re-fetch payment details because total changed
+                            const updatedPayment = await getPaymentByBill(billId);
+                            setPayment(updatedPayment);
+
+                            Toast.show({ type: 'success', text1: 'Item Removed' });
+                        } catch (error) {
+                            Alert.alert('Error', 'Failed to remove item');
+                        }
+                    }
+                }
+            ]
+        );
+    };
+
     const handleShareBill = async () => {
+        // ... (rest of share logic stays same) ...
         try {
             const html = `
 <!DOCTYPE html>
@@ -156,7 +215,8 @@ const BillDetailScreen = ({ route, navigation }) => {
 
             Alert.alert('Success', 'Payment updated successfully');
             setShowPaymentModal(false);
-            loadBillDetails();
+            const updatedPayment = await getPaymentByBill(billId);
+            setPayment(updatedPayment); // Specific reload
         } catch (error) {
             Alert.alert('Error', error.response?.data?.detail || 'Failed to update payment');
         }
@@ -218,7 +278,12 @@ const BillDetailScreen = ({ route, navigation }) => {
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>Items</Text>
                     {bill.items.map((item, index) => (
-                        <BillItem key={index} item={item} index={index} />
+                        <BillItem
+                            key={index}
+                            item={item}
+                            index={index}
+                            onRemove={() => handleRemoveItem(index)}
+                        />
                     ))}
                 </View>
 
@@ -233,13 +298,22 @@ const BillDetailScreen = ({ route, navigation }) => {
                 <View style={styles.actionRow}>
                     <TouchableOpacity style={styles.actionBtn} onPress={handleDuplicateBill}>
                         <Text style={styles.actionBtnIcon}>📋</Text>
-                        <Text style={styles.actionBtnText}>Duplicate</Text>
+                        <Text style={styles.actionBtnText}>Copy</Text>
                     </TouchableOpacity>
                     <TouchableOpacity style={[styles.actionBtn, styles.actionBtnPrimary]} onPress={handleShareBill}>
                         <Text style={styles.actionBtnIcon}>📤</Text>
                         <Text style={[styles.actionBtnText, { color: '#fff' }]}>Share</Text>
                     </TouchableOpacity>
                 </View>
+
+                {/* Delete Bill Button */}
+                <TouchableOpacity
+                    style={styles.deleteBillBtn}
+                    onPress={handleDeleteBill}
+                    activeOpacity={0.7}
+                >
+                    <Text style={styles.deleteBillText}>🗑️ Delete Bill</Text>
+                </TouchableOpacity>
 
                 {payment && (
                     <Card style={styles.paymentCard}>
@@ -430,6 +504,22 @@ const styles = StyleSheet.create({
     actionBtnPrimary: {
         backgroundColor: colors.primary,
         borderColor: colors.primary,
+    },
+    deleteBillBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginTop: spacing.md,
+        padding: spacing.md,
+        backgroundColor: '#FFEBEE',
+        borderRadius: borderRadius.md,
+        borderWidth: 1,
+        borderColor: '#FFCDD2',
+    },
+    deleteBillText: {
+        color: '#D32F2F',
+        fontWeight: '600',
+        fontSize: fontSize.md,
     },
     actionBtnIcon: {
         fontSize: 18,

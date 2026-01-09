@@ -9,6 +9,9 @@ import {
     Modal,
     TextInput,
     Alert,
+    KeyboardAvoidingView,
+    ScrollView,
+    Platform,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import DateTimePickerModal from 'react-native-modal-datetime-picker';
@@ -181,13 +184,7 @@ const ExpensesScreen = ({ navigation }) => {
                 </View>
             </View>
 
-            {/* Add Button */}
-            <View style={styles.addButtonContainer}>
-                <Button
-                    title="+ Add Expense"
-                    onPress={() => setShowAddModal(true)}
-                />
-            </View>
+
 
             {/* Expenses List */}
             <FlatList
@@ -218,9 +215,21 @@ const ExpensesScreen = ({ navigation }) => {
                 }
             />
 
+            {/* Floating Add Button */}
+            <View style={styles.fabContainer}>
+                <Button
+                    title="+ Add Expense"
+                    onPress={() => setShowAddModal(true)}
+                    style={styles.fab}
+                />
+            </View>
+
             {/* Add Expense Modal */}
             <Modal visible={showAddModal} animationType="slide" transparent>
-                <View style={styles.modalOverlay}>
+                <KeyboardAvoidingView
+                    behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                    style={styles.modalOverlay}
+                >
                     <View style={styles.modalContent}>
                         <View style={styles.modalHeader}>
                             <Text style={styles.modalTitle}>Add Expense</Text>
@@ -229,77 +238,80 @@ const ExpensesScreen = ({ navigation }) => {
                             </TouchableOpacity>
                         </View>
 
-                        <Input
-                            label="Raw Material Name *"
-                            value={formData.name}
-                            onChangeText={(text) => setFormData({ ...formData, name: text })}
-                            placeholder="e.g., Coconut Oil, Lye"
-                        />
-
-                        <Input
-                            label="Price (₹) *"
-                            value={formData.price}
-                            onChangeText={(text) => setFormData({ ...formData, price: text })}
-                            placeholder="Total amount paid"
-                            keyboardType="decimal-pad"
-                        />
-
-                        <Input
-                            label="Quantity (grams) *"
-                            value={formData.quantity_gms}
-                            onChangeText={(text) => setFormData({ ...formData, quantity_gms: text })}
-                            placeholder="Weight in grams"
-                            keyboardType="decimal-pad"
-                        />
-
-                        {/* Date Picker */}
-                        <Text style={styles.dateLabel}>Purchase Date (optional)</Text>
-                        <TouchableOpacity
-                            style={styles.datePickerButton}
-                            onPress={() => setShowDatePicker(true)}
-                        >
-                            <Text style={formData.expense_date ? styles.dateText : styles.datePlaceholder}>
-                                {formData.expense_date
-                                    ? `📅 ${formData.expense_date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`
-                                    : '📅 Tap to select (default: today)'
-                                }
-                            </Text>
-                        </TouchableOpacity>
-
-                        <DateTimePickerModal
-                            isVisible={showDatePicker}
-                            mode="date"
-                            onConfirm={(date) => {
-                                setFormData({ ...formData, expense_date: date });
-                                setShowDatePicker(false);
-                            }}
-                            onCancel={() => setShowDatePicker(false)}
-                            maximumDate={new Date()}
-                            date={formData.expense_date || new Date()}
-                        />
-
-                        <Input
-                            label="Notes (optional)"
-                            value={formData.notes}
-                            onChangeText={(text) => setFormData({ ...formData, notes: text })}
-                            placeholder="Any additional details"
-                        />
-
-                        <View style={styles.modalActions}>
-                            <Button
-                                title="Cancel"
-                                variant="outline"
-                                onPress={() => setShowAddModal(false)}
-                                style={{ flex: 1, marginRight: spacing.sm }}
+                        <ScrollView showsVerticalScrollIndicator={false}>
+                            <Input
+                                label="Raw Material Name *"
+                                value={formData.name}
+                                onChangeText={(text) => setFormData({ ...formData, name: text })}
+                                placeholder="e.g., Coconut Oil, Lye"
                             />
-                            <Button
-                                title="Add Expense"
-                                onPress={handleAddExpense}
-                                style={{ flex: 1 }}
+
+                            <Input
+                                label="Price (₹) *"
+                                value={formData.price}
+                                onChangeText={(text) => setFormData({ ...formData, price: text })}
+                                placeholder="Total amount paid"
+                                keyboardType="decimal-pad"
                             />
-                        </View>
+
+                            <Input
+                                label="Quantity (grams) *"
+                                value={formData.quantity_gms}
+                                onChangeText={(text) => setFormData({ ...formData, quantity_gms: text })}
+                                placeholder="Weight in grams"
+                                keyboardType="decimal-pad"
+                            />
+
+                            {/* Date Picker */}
+                            <Text style={styles.dateLabel}>Purchase Date (optional)</Text>
+                            <TouchableOpacity
+                                style={styles.datePickerButton}
+                                onPress={() => setShowDatePicker(true)}
+                            >
+                                <Text style={formData.expense_date ? styles.dateText : styles.datePlaceholder}>
+                                    {formData.expense_date
+                                        ? `📅 ${formData.expense_date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`
+                                        : '📅 Tap to select (default: today)'
+                                    }
+                                </Text>
+                            </TouchableOpacity>
+
+                            <DateTimePickerModal
+                                isVisible={showDatePicker}
+                                mode="date"
+                                onConfirm={(date) => {
+                                    setFormData({ ...formData, expense_date: date });
+                                    setShowDatePicker(false);
+                                }}
+                                onCancel={() => setShowDatePicker(false)}
+                                maximumDate={new Date()}
+                                date={formData.expense_date || new Date()}
+                            />
+
+                            <Input
+                                label="Notes (optional)"
+                                value={formData.notes}
+                                onChangeText={(text) => setFormData({ ...formData, notes: text })}
+                                placeholder="Any additional details"
+                            />
+
+                            <View style={styles.modalActions}>
+                                <Button
+                                    title="Cancel"
+                                    variant="outline"
+                                    onPress={() => setShowAddModal(false)}
+                                    style={{ flex: 1, marginRight: spacing.sm }}
+                                />
+                                <Button
+                                    title="Add Expense"
+                                    onPress={handleAddExpense}
+                                    style={{ flex: 1 }}
+                                />
+                            </View>
+                            <View style={{ height: 20 }} />
+                        </ScrollView>
                     </View>
-                </View>
+                </KeyboardAvoidingView>
             </Modal>
         </View>
     );
@@ -352,13 +364,25 @@ const styles = StyleSheet.create({
         ...typography.h2,
         color: colors.text,
     },
-    addButtonContainer: {
-        paddingHorizontal: layout.screenPadding,
-        marginBottom: spacing.md,
+    // FAB Styles
+    fabContainer: {
+        position: 'absolute',
+        bottom: 24,
+        right: 24,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 4,
+        elevation: 8,
+    },
+    fab: {
+        borderRadius: 28,
+        paddingHorizontal: 24,
+        paddingVertical: 14,
     },
     listContainer: {
         paddingHorizontal: layout.screenPadding,
-        paddingBottom: spacing.xxl,
+        paddingBottom: 100, // Extra space for FAB
     },
     dateGroup: {
         marginBottom: spacing.md,

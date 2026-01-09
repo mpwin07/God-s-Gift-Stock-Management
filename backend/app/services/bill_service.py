@@ -61,6 +61,24 @@ async def reduce_stock(db: Database, items: List[BillItem]) -> None:
         )
 
 
+async def restore_stock(db: Database, items: List[dict]) -> None:
+    """Restore stock for a list of items (used when deleting bill or removing item)"""
+    for item in items:
+        # Handle both object and dictionary access
+        p_id = item.get("product_id") if isinstance(item, dict) else item.product_id
+        qty = item.get("quantity") if isinstance(item, dict) else item.quantity
+
+        if p_id and qty:
+            product_id = ObjectId(p_id)
+            db.inventory.update_one(
+                {"product_id": product_id},
+                {
+                    "$inc": {"current_stock": qty},
+                    "$set": {"last_updated": datetime.utcnow()}
+                }
+            )
+
+
 async def create_bill_with_payment(db: Database, bill_data: BillCreate) -> tuple:
     """
     Create bill and payment record, reduce stock atomically

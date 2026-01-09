@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from app.database import get_database
 from app.models.bill import BillCreate, BillResponse
-from app.services.bill_service import create_bill_with_payment
+from app.services.bill_service import create_bill_with_payment, restore_stock
 from pymongo.database import Database
 from bson import ObjectId
 from datetime import datetime, timedelta
@@ -112,3 +112,95 @@ async def get_bill(bill_id: str, db: Database = Depends(get_database)):
         )
     
     return bill_helper(bill)
+
+@router.delete("/{bill_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_bill(bill_id: str, db: Database = Depends(get_database)):
+    """
+    Delete a bill permanently
+    - Restores inventory stock
+    - Deletes bill document
+    - Deletes payment document
+    """
+    try:
+        bill = db.bills.find_one({"_id": ObjectId(bill_id)})
+        if not bill:
+            raise HTTPException(status_code=404, detail="Bill not found")
+
+        # 1. Restore Stock
+        if "items" in bill and bill["items"]:
+            await restore_stock(db, bill["items"])
+
+        # 2. Delete Bill and Payment
+        db.bills.delete_one({"_id": ObjectId(bill_id)})
+        db.payments.delete_one({"bill_id": ObjectId(bill_id)})
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/{bill_id}/items/{item_index}", response_model=BillResponse)
+async def delete_bill_item(bill_id: str, item_index: int, db: Database = Depends(get_database)):
+    """
+    Remove a single item from a bill
+    - Restores stock for that item
+    - Recalculates total
+    - Updates bill and payment
+    """
+    try:
+        bill = db.bills.find_one({"_id": ObjectId(bill_id)})
+        if not bill:
+            raise HTTPException(status_code=404, detail="Bill not found")
+
+        items = bill.get("items", [])
+        if item_index < 0 or item_index >= len(items):
+            raise HTTPException(status_code=400, detail="Invalid item index")
+
+        # 1. Identify and Restore Stock for the specific item
+        item_to_remove = items[item_index]
+        await restore_stock(db, [item_to_remove])
+
+        # 2. Remove item and recalculate total
+        items.pop(item_index)
+        new_total = sum(i.get("item_total", 0) for i in items)
+        new_total = round(new_total, 2)
+
+        # 3. Update Bill
+        db.bills.update_one(
+            {"_id": ObjectId(bill_id)},
+            {
+                "$set": {
+                    "items": items,
+                    "bill_total": new_total,
+                    "updated_at": datetime.utcnow()
+                }
+            }
+        )
+
+        # 4. Update Payment (balance due usually changes)
+        # Note: If amount_paid > new_total, balance might be negative (credit)
+        payment = db.payments.find_one({"bill_id": ObjectId(bill_id)})
+        if payment:
+            paid = payment.get("amount_paid", 0)
+            new_balance = new_total - paid
+            
+            db.payments.update_one(
+                {"bill_id": ObjectId(bill_id)},
+                {
+                    "$set": {
+                        "bill_total": new_total,
+                        "balance_due": new_balance,
+                        "updated_at": datetime.utcnow()
+                    }
+                }
+            )
+
+        # Return updated bill
+        updated_bill = db.bills.find_one({"_id": ObjectId(bill_id)})
+        return bill_helper(updated_bill)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
