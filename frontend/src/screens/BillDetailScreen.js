@@ -37,12 +37,21 @@ const BillDetailScreen = ({ route, navigation }) => {
                 getBillById(billId),
                 getPaymentByBill(billId),
             ]);
+
+            // Defensive checks
+            if (!billData) {
+                Alert.alert('Error', 'Bill not found');
+                navigation.goBack();
+                return;
+            }
+
             setBill(billData);
-            setPayment(paymentData);
-            if (paymentData) {
+            setPayment(paymentData ?? null);
+            if (paymentData?.amount_paid != null) {
                 setAmountPaid(paymentData.amount_paid.toString());
             }
         } catch (error) {
+            console.error('Error loading bill details:', error);
             Alert.alert('Error', 'Failed to load bill details');
             navigation.goBack();
         } finally {
@@ -290,7 +299,7 @@ const BillDetailScreen = ({ route, navigation }) => {
                 <Card style={styles.totalCard}>
                     <View style={styles.row}>
                         <Text style={styles.totalLabel}>Bill Total</Text>
-                        <Text style={styles.totalValue}>₹{bill.bill_total.toFixed(2)}</Text>
+                        <Text style={styles.totalValue}>₹{(bill.bill_total ?? 0).toFixed(2)}</Text>
                     </View>
                 </Card>
 
@@ -326,13 +335,13 @@ const BillDetailScreen = ({ route, navigation }) => {
 
                         <View style={styles.paymentRow}>
                             <Text style={styles.label}>Amount Paid</Text>
-                            <Text style={styles.value}>₹{payment.amount_paid.toFixed(2)}</Text>
+                            <Text style={styles.value}>₹{(payment.amount_paid ?? 0).toFixed(2)}</Text>
                         </View>
 
                         <View style={styles.paymentRow}>
                             <Text style={styles.label}>Balance Due</Text>
                             <Text style={[styles.value, { color: colors.error }]}>
-                                ₹{payment.balance_due.toFixed(2)}
+                                ₹{(payment.balance_due ?? 0).toFixed(2)}
                             </Text>
                         </View>
 

@@ -50,9 +50,11 @@ const ProductsScreen = ({ navigation }) => {
     const loadProducts = async () => {
         try {
             const data = await getProducts({ is_active: true });
-            setProducts(data);
+            // Defensive null check
+            setProducts(Array.isArray(data) ? data : []);
         } catch (error) {
             console.error('Error loading products:', error);
+            setProducts([]);
             Toast.show({ type: 'error', text1: 'Failed to load products' });
         } finally {
             setLoading(false);

@@ -60,6 +60,9 @@ async def get_bills(
     # Get bills
     bills = list(db.bills.find(query).sort("bill_date", -1).limit(limit))
     
+    # DEBUG: Log query results
+    print(f"[DEBUG] GET /bills - Query: {query}, Found: {len(bills)} bills")
+    
     # If payment_status filter, join with payments
     if payment_status:
         bill_ids = [bill["_id"] for bill in bills]

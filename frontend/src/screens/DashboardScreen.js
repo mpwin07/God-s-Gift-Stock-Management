@@ -128,10 +128,12 @@ const DashboardScreen = ({ navigation }) => {
                 getExpenseMonthlyTotals(),
                 getBills({ limit: 200 }),
             ]);
-            setStats(statsData);
-            setAnalytics(analyticsData);
-            setExpenseStats(expenseData);
-            setMonthlyBills(billsData);
+
+            // Defensive null checks for all data
+            setStats(statsData ?? {});
+            setAnalytics(analyticsData ?? {});
+            setExpenseStats(expenseData ?? { this_month_expenses: 0, last_month_expenses: 0 });
+            setMonthlyBills(Array.isArray(billsData) ? billsData : []);
 
             if (showToast) {
                 Toast.show({
@@ -146,6 +148,11 @@ const DashboardScreen = ({ navigation }) => {
             animateEntrance();
         } catch (error) {
             console.error('Error loading dashboard:', error);
+            // Set safe defaults on error
+            setStats({});
+            setAnalytics({});
+            setExpenseStats({ this_month_expenses: 0, last_month_expenses: 0 });
+            setMonthlyBills([]);
             Toast.show({
                 type: 'error',
                 text1: 'Failed to load data',

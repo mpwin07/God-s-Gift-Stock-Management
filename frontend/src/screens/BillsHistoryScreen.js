@@ -41,10 +41,14 @@ const BillsHistoryScreen = ({ navigation }) => {
     const loadBills = async () => {
         try {
             const data = await getBills({ limit: 100 });
-            setBills(data);
+
+            // Defensive check - ensure data is always an array
+            const billsArray = Array.isArray(data) ? data : [];
+            console.log('[DEBUG] Loaded bills:', billsArray.length);
+            setBills(billsArray);
 
             const paymentData = {};
-            for (const bill of data) {
+            for (const bill of billsArray) {
                 try {
                     const payment = await getPaymentByBill(bill._id);
                     paymentData[bill._id] = payment;
@@ -59,6 +63,8 @@ const BillsHistoryScreen = ({ navigation }) => {
             setPayments(paymentData);
         } catch (error) {
             console.error('Error loading bills:', error);
+            // Set empty array on error to prevent crash
+            setBills([]);
             Toast.show({ type: 'error', text1: 'Failed to load bills' });
         } finally {
             setLoading(false);
@@ -290,7 +296,7 @@ const BillsHistoryScreen = ({ navigation }) => {
                                 {item.bill_number} · {formatTime(item.bill_date)}
                             </Text>
                         </View>
-                        <Text style={styles.billAmount}>₹{item.bill_total.toFixed(0)}</Text>
+                        <Text style={styles.billAmount}>₹{(item.bill_total ?? 0).toFixed(0)}</Text>
                     </View>
 
                     {/* TWO BIG STATUS BUTTONS */}
@@ -351,7 +357,7 @@ const BillsHistoryScreen = ({ navigation }) => {
             <View style={styles.header}>
                 <Text style={styles.headerTitle}>Bills</Text>
                 <Text style={styles.headerSubtitle}>
-                    {bills.length} total · ₹{bills.reduce((sum, b) => sum + b.bill_total, 0).toFixed(0)}
+                    {bills.length} total · ₹{bills.reduce((sum, b) => sum + (b.bill_total ?? 0), 0).toFixed(0)}
                 </Text>
             </View>
 
@@ -499,7 +505,7 @@ const BillsHistoryScreen = ({ navigation }) => {
                             </TouchableOpacity>
                         </View>
                         <Text style={styles.customerHistorySubtitle}>
-                            {customerOrders.length} orders · ₹{customerOrders.reduce((s, b) => s + b.bill_total, 0).toFixed(0)} total
+                            {customerOrders.length} orders · ₹{customerOrders.reduce((s, b) => s + (b.bill_total ?? 0), 0).toFixed(0)} total
                         </Text>
 
                         <FlatList

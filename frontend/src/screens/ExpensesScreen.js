@@ -49,10 +49,12 @@ const ExpensesScreen = ({ navigation }) => {
                 getExpenses({ limit: 100 }),
                 getExpenseMonthlyTotals(),
             ]);
-            setExpenses(expensesData);
-            setMonthlyTotals(totals);
+            // Defensive null checks
+            setExpenses(Array.isArray(expensesData) ? expensesData : []);
+            setMonthlyTotals(totals ?? { this_month_expenses: 0, last_month_expenses: 0 });
         } catch (error) {
             console.error('Error loading expenses:', error);
+            setExpenses([]);
             Toast.show({ type: 'error', text1: 'Failed to load expenses' });
         } finally {
             setLoading(false);
@@ -154,11 +156,11 @@ const ExpensesScreen = ({ navigation }) => {
             activeOpacity={0.8}
         >
             <View style={styles.expenseMain}>
-                <Text style={styles.expenseName}>{item.name}</Text>
-                <Text style={styles.expensePrice}>₹{item.price.toFixed(0)}</Text>
+                <Text style={styles.expenseName}>{item.name ?? 'Unknown'}</Text>
+                <Text style={styles.expensePrice}>₹{(item.price ?? 0).toFixed(0)}</Text>
             </View>
             <View style={styles.expenseDetails}>
-                <Text style={styles.expenseQty}>{item.quantity_gms}g</Text>
+                <Text style={styles.expenseQty}>{item.quantity_gms ?? 0}g</Text>
                 {item.notes && <Text style={styles.expenseNotes}>{item.notes}</Text>}
             </View>
         </TouchableOpacity>

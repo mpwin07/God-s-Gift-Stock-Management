@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routes import auth, products, inventory, bills, payments, dashboard, expenses
+from app.routes import auth, products, inventory, bills, payments, dashboard, expenses, db_check
 from app.database import close_database
 from app.config import get_settings
 
@@ -32,6 +32,7 @@ app.include_router(bills.router)
 app.include_router(payments.router)
 app.include_router(dashboard.router)
 app.include_router(expenses.router)
+app.include_router(db_check.router)
 
 
 @app.get("/")

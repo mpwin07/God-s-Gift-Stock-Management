@@ -60,7 +60,9 @@ export const getLowStockAlerts = async () => {
 
 // ============ BILLS ============
 export const getBills = async (params = {}) => {
+    console.log('[DEBUG] Fetching bills with params:', params);
     const response = await apiClient.get(API_ENDPOINTS.BILLS, { params });
+    console.log('[DEBUG] Bills response:', response.data?.length ?? 'null/undefined', 'items');
     return response.data;
 };
 
