@@ -11,7 +11,7 @@ class UserLogin(BaseModel):
 
 class UserResponse(BaseModel):
     """User response model (without password)"""
-    id: str = Field(..., alias="_id")
+    id: int
     username: str
     full_name: str
     role: str

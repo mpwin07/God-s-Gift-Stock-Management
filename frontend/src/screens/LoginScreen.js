@@ -83,7 +83,7 @@ const LoginScreen = () => {
                     />
 
                     <Text style={styles.hint}>
-                        Default: admin / admin123
+                        Contact admin for credentials
                     </Text>
                 </View>
             </ScrollView>

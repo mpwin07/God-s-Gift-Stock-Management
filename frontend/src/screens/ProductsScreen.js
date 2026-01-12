@@ -92,7 +92,7 @@ const ProductsScreen = ({ navigation }) => {
                     style: 'destructive',
                     onPress: async () => {
                         try {
-                            await deleteProduct(product._id);
+                            await deleteProduct(product.id);
                             successHaptic();
                             Toast.show({ type: 'success', text1: 'Product Deleted' });
                             loadProducts();
@@ -121,7 +121,7 @@ const ProductsScreen = ({ navigation }) => {
             };
 
             if (editingProduct) {
-                await updateProduct(editingProduct._id, productData);
+                await updateProduct(editingProduct.id, productData);
                 Toast.show({ type: 'success', text1: 'Product Updated' });
             } else {
                 await createProduct(productData);
@@ -275,7 +275,7 @@ const ProductsScreen = ({ navigation }) => {
             {/* Product Grid */}
             <FlatList
                 data={filteredProducts}
-                keyExtractor={(item) => item._id}
+                keyExtractor={(item) => item.id?.toString()}
                 numColumns={2}
                 columnWrapperStyle={styles.gridRow}
                 contentContainerStyle={styles.gridContainer}

@@ -219,7 +219,7 @@ const NewBillScreen = ({ navigation, route }) => {
         const itemTotal = Math.round(rate * qty * 100) / 100;
 
         const newItem = {
-            product_id: selectedProduct._id,
+            product_id: selectedProduct.id,
             product_name: selectedProduct.name,
             grams: grams,
             quantity: qty,
@@ -536,7 +536,7 @@ const NewBillScreen = ({ navigation, route }) => {
 
                     <FlatList
                         data={filteredProducts}
-                        keyExtractor={(item) => item._id}
+                        keyExtractor={(item) => item.id?.toString()}
                         renderItem={({ item }) => (
                             <TouchableOpacity
                                 style={styles.productItem}

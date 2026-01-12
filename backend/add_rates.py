@@ -12,21 +12,21 @@ MONGODB_URI = os.getenv("MONGODB_URI")
 
 # Default rates for products (in Rupees)
 DEFAULT_RATES = {
-    "ABC Supersip": 50.00,
-    "Red Banana Supersip": 55.00,
-    "Kavuni Arisi Drink": 60.00,
-    "Amla Candy": 30.00,
-    "Neem Soap": 40.00,
-    "Kuppameni Soap": 45.00,
-    "Charcoal Soap": 50.00,
-    "Carrot Soap": 45.00,
-    "Beetroot Soap": 45.00,
-    "Turmeric Soap": 40.00,
-    "Nalangumavu Soap": 50.00,
-    "Aloe Vera Soap": 45.00,
-    "Paneer Rose Soap": 55.00,
-    "Rosemary Soap": 50.00,
-    "Customized Soap": 60.00,
+    "ABC Supersip": 300.00,
+    "Red Banana Supersip": 249.00,
+    "Kavuni Arisi Drink": 200.00,
+    "Amla Candy": 80.00,
+    "Neem Soap": 80.00,
+    "Kuppameni Soap": 120.00,
+    "Charcoal Soap": 120.00,
+    "Carrot Soap": 110.00,
+    "Beetroot Soap": 110.00,
+    "Turmeric Soap": 90.00,
+    "Nalangumavu Soap": 110.00,
+    "Aloe Vera Soap": 90.00,
+    "Paneer Rose Soap": 90.00,
+    "Rosemary Soap": 110.00,
+    "Customized Soap": 110.00,
 }
 
 print("💰 Adding default rates to products...")

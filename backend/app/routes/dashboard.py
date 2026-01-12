@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends
-from app.database import get_database
-from pymongo.database import Database
+from app.wowsql_client import bills as get_bills_table, payments as get_payments_table, inventory as get_inventory_table, products as get_products_table
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Any
 from pydantic import BaseModel
+import json
 
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 
@@ -42,7 +42,7 @@ class AnalyticsResponse(BaseModel):
 
 
 @router.get("/stats", response_model=DashboardStats)
-async def get_dashboard_stats(db: Database = Depends(get_database)):
+async def get_dashboard_stats():
     """
     Get dashboard statistics:
     - Today's sales total
@@ -51,62 +51,55 @@ async def get_dashboard_stats(db: Database = Depends(get_database)):
     - Total pending amount
     - Low stock alerts count
     """
+    bills_table = get_bills_table()
+    payments_table = get_payments_table()
+    inventory_table = get_inventory_table()
+    products_table = get_products_table()
+    
     # Use IST for "today" calculation
-    # Bills are stored with IST timestamps (no timezone info)
     now_ist = datetime.now(IST)
     today_start = now_ist.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=None)
     today_end = today_start + timedelta(days=1)
     
-    # Get today's bills (for count display)
-    today_bills = list(db.bills.find({
-        "bill_date": {"$gte": today_start, "$lt": today_end}
-    }))
+    # Get all bills and filter for today
+    all_bills = bills_table.find()
+    today_bills = []
+    for bill in all_bills:
+        bill_date = bill.get("bill_date")
+        if isinstance(bill_date, str):
+            bill_date = datetime.fromisoformat(bill_date.replace("Z", "+00:00")).replace(tzinfo=None)
+        if bill_date >= today_start and bill_date < today_end:
+            today_bills.append(bill)
     
     today_bills_count = len(today_bills)
     
-    # Today's sales = payments completed TODAY (not based on bill_date)
-    # This counts sales on the day payment was confirmed
-    today_completed_payments = list(db.payments.find({
-        "payment_completed_date": {"$gte": today_start, "$lt": today_end},
-        "payment_status": "Completed"
-    }))
-    
-    # Get the bill totals for these completed payments
-    today_paid_bill_ids = [p["bill_id"] for p in today_completed_payments]
-    today_paid_bills = list(db.bills.find({"_id": {"$in": today_paid_bill_ids}}))
-    
-    today_sales = sum(bill["bill_total"] for bill in today_paid_bills)
+    # Get payments completed today
+    all_payments = payments_table.find()
+    today_sales = 0
+    for payment in all_payments:
+        completed_date = payment.get("payment_completed_date")
+        if completed_date and payment.get("payment_status") == "Completed":
+            if isinstance(completed_date, str):
+                completed_date = datetime.fromisoformat(completed_date.replace("Z", "+00:00")).replace(tzinfo=None)
+            if completed_date >= today_start and completed_date < today_end:
+                today_sales += payment.get("bill_total", 0)
     
     # Pending payments
-    pending_payments = list(db.payments.find({
-        "payment_status": {"$in": ["Pending", "Partial"]}
-    }))
-    
+    pending_payments = [p for p in all_payments if p.get("payment_status") in ["Pending", "Partial"]]
     total_pending_payments = len(pending_payments)
-    total_pending_amount = sum(p["balance_due"] for p in pending_payments)
+    total_pending_amount = sum(p.get("balance_due", 0) for p in pending_payments)
     
     # Low stock count
-    low_stock_pipeline = [
-        {
-            "$lookup": {
-                "from": "products",
-                "localField": "product_id",
-                "foreignField": "_id",
-                "as": "product"
-            }
-        },
-        {"$unwind": "$product"},
-        {
-            "$match": {
-                "$expr": {"$lt": ["$current_stock", "$product.min_stock_alert"]},
-                "product.is_active": True
-            }
-        },
-        {"$count": "low_stock_count"}
-    ]
+    all_inventory = inventory_table.find()
+    all_products = products_table.find()
+    products_map = {p["id"]: p for p in all_products}
     
-    low_stock_result = list(db.inventory.aggregate(low_stock_pipeline))
-    low_stock_count = low_stock_result[0]["low_stock_count"] if low_stock_result else 0
+    low_stock_count = 0
+    for inv in all_inventory:
+        product = products_map.get(inv["product_id"])
+        if product and product.get("is_active", True):
+            if inv["current_stock"] < product.get("min_stock_alert", 10):
+                low_stock_count += 1
     
     return DashboardStats(
         today_sales=round(today_sales, 2),
@@ -118,89 +111,83 @@ async def get_dashboard_stats(db: Database = Depends(get_database)):
 
 
 @router.get("/analytics", response_model=AnalyticsResponse)
-async def get_analytics(
-    days: int = 30,
-    db: Database = Depends(get_database)
-):
+async def get_analytics(days: int = 30):
     """
     Get analytics:
     - Product-wise sales
     - Daily sales trend
     """
+    bills_table = get_bills_table()
+    payments_table = get_payments_table()
+    
     start_date = datetime.utcnow() - timedelta(days=days)
     
-    # 1. Product Sales Aggregation
-    product_pipeline = [
-        {
-            "$match": {
-                "bill_date": {"$gte": start_date}
-            }
-        },
-        {"$unwind": "$items"},
-        {
-            "$group": {
-                "_id": "$items.product_name",
-                "total_quantity": {"$sum": "$items.quantity"},
-                "total_sales": {"$sum": "$items.item_total"},
-                "unit": {"$first": "$items.unit"}
-            }
-        },
-        {"$sort": {"total_sales": -1}}
-    ]
+    # Get all bills in period
+    all_bills = bills_table.find()
+    period_bills = []
+    for bill in all_bills:
+        bill_date = bill.get("bill_date")
+        if isinstance(bill_date, str):
+            bill_date = datetime.fromisoformat(bill_date.replace("Z", "+00:00")).replace(tzinfo=None)
+        if bill_date >= start_date:
+            period_bills.append(bill)
     
-    product_results = list(db.bills.aggregate(product_pipeline))
+    # Product sales aggregation
+    product_sales_map = {}
+    for bill in period_bills:
+        items = bill.get("items", [])
+        if isinstance(items, str):
+            items = json.loads(items)
+        
+        for item in items:
+            name = item.get("product_name", "Unknown")
+            if name not in product_sales_map:
+                product_sales_map[name] = {
+                    "total_quantity": 0,
+                    "total_sales": 0,
+                    "unit": item.get("unit", "pcs")
+                }
+            product_sales_map[name]["total_quantity"] += item.get("quantity", 0)
+            product_sales_map[name]["total_sales"] += item.get("item_total", 0)
     
     product_sales = [
         ProductSales(
-            product_name=r["_id"],
-            total_quantity=round(r["total_quantity"], 2),
-            total_sales=round(r["total_sales"], 2),
-            unit=r["unit"]
+            product_name=name,
+            total_quantity=round(data["total_quantity"], 2),
+            total_sales=round(data["total_sales"], 2),
+            unit=data["unit"]
         )
-        for r in product_results
+        for name, data in sorted(product_sales_map.items(), key=lambda x: -x[1]["total_sales"])
     ]
     
-    # 2. Daily Sales Aggregation - based on payment completion date
-    # Join payments with bills to get bill_total, group by payment_completed_date
-    daily_pipeline = [
-        {
-            "$match": {
-                "payment_completed_date": {"$gte": start_date},
-                "payment_status": "Completed"
-            }
-        },
-        {
-            "$lookup": {
-                "from": "bills",
-                "localField": "bill_id",
-                "foreignField": "_id",
-                "as": "bill"
-            }
-        },
-        {"$unwind": "$bill"},
-        {
-            "$group": {
-                "_id": {
-                    "$dateToString": {"format": "%Y-%m-%d", "date": "$payment_completed_date"}
-                },
-                "total_sales": {"$sum": "$bill.bill_total"}
-            }
-        },
-        {"$sort": {"_id": 1}}
-    ]
+    # Daily sales aggregation based on payment completion date
+    all_payments = payments_table.find()
+    daily_sales_map = {}
     
-    daily_results = list(db.payments.aggregate(daily_pipeline))
+    for payment in all_payments:
+        if payment.get("payment_status") != "Completed":
+            continue
+        
+        completed_date = payment.get("payment_completed_date")
+        if not completed_date:
+            continue
+        
+        if isinstance(completed_date, str):
+            completed_date = datetime.fromisoformat(completed_date.replace("Z", "+00:00")).replace(tzinfo=None)
+        
+        if completed_date >= start_date:
+            date_str = completed_date.strftime("%Y-%m-%d")
+            if date_str not in daily_sales_map:
+                daily_sales_map[date_str] = 0
+            daily_sales_map[date_str] += payment.get("bill_total", 0)
     
-    # Fill in missing dates with 0
+    # Fill in missing dates
     daily_sales = []
-    current_date = start_date
-    sales_map = {r["_id"]: r["total_sales"] for r in daily_results}
-    
     for i in range(days):
         date_str = (start_date + timedelta(days=i)).strftime("%Y-%m-%d")
         daily_sales.append(DailySales(
             date=date_str,
-            sales=round(sales_map.get(date_str, 0), 2)
+            sales=round(daily_sales_map.get(date_str, 0), 2)
         ))
     
     return AnalyticsResponse(

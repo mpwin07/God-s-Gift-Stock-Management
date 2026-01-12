@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routes import auth, products, inventory, bills, payments, dashboard, expenses, db_check
-from app.database import close_database
+from app.wowsql_client import close_client
 from app.config import get_settings
 
 settings = get_settings()
@@ -54,5 +54,5 @@ async def health_check():
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    """Close database connection on shutdown"""
-    close_database()
+    """Close HTTP client on shutdown"""
+    close_client()

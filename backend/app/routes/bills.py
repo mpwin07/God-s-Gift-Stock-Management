@@ -1,19 +1,99 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from app.database import get_database
+from app.wowsql_client import bills as get_bills_table, payments as get_payments_table, inventory as get_inventory_table, bill_sequences as get_sequences_table
 from app.models.bill import BillCreate, BillResponse
-from app.services.bill_service import create_bill_with_payment, restore_stock
-from pymongo.database import Database
-from bson import ObjectId
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
+import json
 
 router = APIRouter(prefix="/bills", tags=["Bills"])
 
+# India Standard Time
+IST = timezone(timedelta(hours=5, minutes=30))
+
 
 def bill_helper(bill: dict) -> dict:
-    """Convert MongoDB document to response format"""
-    bill["_id"] = str(bill["_id"])
+    """Convert WowSQL record to response format"""
+    # Parse items JSON if it's a string
+    if isinstance(bill.get("items"), str):
+        bill["items"] = json.loads(bill["items"])
     return bill
+
+
+async def generate_bill_number() -> str:
+    """Generate unique bill number: BILL-YYYYMMDD-XXXX"""
+    sequences_table = get_sequences_table()
+    today = datetime.utcnow()
+    date_str = today.strftime("%Y%m%d")
+    
+    # Find or create sequence for today
+    seq_record = sequences_table.find_one(filters={"date_key": date_str})
+    
+    if seq_record:
+        new_seq = seq_record["sequence"] + 1
+        sequences_table.update_one(seq_record["id"], {"sequence": new_seq})
+    else:
+        new_seq = 1
+        sequences_table.insert_one({"date_key": date_str, "sequence": 1})
+    
+    bill_number = f"BILL-{date_str}-{new_seq:04d}"
+    return bill_number
+
+
+async def validate_stock_availability(items: List[dict]) -> None:
+    """Validate that sufficient stock is available for all items"""
+    inventory_table = get_inventory_table()
+    
+    for item in items:
+        product_id = int(item["product_id"])
+        inventory = inventory_table.find_one(filters={"product_id": product_id})
+        
+        if not inventory:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Product {item['product_name']} not found in inventory"
+            )
+        
+        if inventory["current_stock"] < item["quantity"]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Insufficient stock for {item['product_name']}. Available: {inventory['current_stock']}, Required: {item['quantity']}"
+            )
+
+
+async def reduce_stock(items: List[dict]) -> None:
+    """Reduce stock for all items in the bill"""
+    inventory_table = get_inventory_table()
+    
+    for item in items:
+        product_id = int(item["product_id"])
+        inventory = inventory_table.find_one(filters={"product_id": product_id})
+        
+        if inventory:
+            new_stock = inventory["current_stock"] - item["quantity"]
+            inventory_table.update_one(inventory["id"], {
+                "current_stock": new_stock,
+                "last_updated": datetime.utcnow().isoformat()
+            })
+
+
+async def restore_stock(items: List[dict]) -> None:
+    """Restore stock for a list of items"""
+    inventory_table = get_inventory_table()
+    
+    for item in items:
+        p_id = item.get("product_id")
+        qty = item.get("quantity", 0)
+        
+        if p_id and qty:
+            product_id = int(p_id)
+            inventory = inventory_table.find_one(filters={"product_id": product_id})
+            
+            if inventory:
+                new_stock = inventory["current_stock"] + qty
+                inventory_table.update_one(inventory["id"], {
+                    "current_stock": new_stock,
+                    "last_updated": datetime.utcnow().isoformat()
+                })
 
 
 @router.get("", response_model=List[BillResponse])
@@ -22,72 +102,114 @@ async def get_bills(
     payment_status: Optional[str] = Query(None, description="Filter by payment status"),
     start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
-    limit: int = Query(100, ge=1, le=500, description="Number of bills to return"),
-    db: Database = Depends(get_database)
+    limit: int = Query(100, ge=1, le=500, description="Number of bills to return")
 ):
     """Get all bills with optional filters"""
-    query = {}
+    bills_table = get_bills_table()
+    payments_table = get_payments_table()
     
-    # Filter by customer name (case-insensitive partial match)
+    filters = {}
+    
+    # Filter by customer name (exact match for now)
     if customer_name:
-        query["customer_name"] = {"$regex": customer_name, "$options": "i"}
+        filters["customer_name"] = customer_name
+    
+    # Get bills sorted by date descending
+    bills = bills_table.find(filters=filters, order_by="bill_date", order_dir="desc", limit=limit)
     
     # Filter by date range
     if start_date or end_date:
-        date_query = {}
-        if start_date:
-            try:
+        filtered_bills = []
+        for bill in bills:
+            bill_date = bill.get("bill_date")
+            if isinstance(bill_date, str):
+                bill_date = datetime.fromisoformat(bill_date.replace("Z", "+00:00"))
+            
+            include = True
+            if start_date:
                 start_dt = datetime.strptime(start_date, "%Y-%m-%d")
-                date_query["$gte"] = start_dt
-            except ValueError:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Invalid start_date format. Use YYYY-MM-DD"
-                )
-        
-        if end_date:
-            try:
+                if bill_date < start_dt:
+                    include = False
+            if end_date:
                 end_dt = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)
-                date_query["$lt"] = end_dt
-            except ValueError:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Invalid end_date format. Use YYYY-MM-DD"
-                )
-        
-        query["bill_date"] = date_query
+                if bill_date >= end_dt:
+                    include = False
+            
+            if include:
+                filtered_bills.append(bill)
+        bills = filtered_bills
     
-    # Get bills
-    bills = list(db.bills.find(query).sort("bill_date", -1).limit(limit))
-    
-    # DEBUG: Log query results
-    print(f"[DEBUG] GET /bills - Query: {query}, Found: {len(bills)} bills")
-    
-    # If payment_status filter, join with payments
+    # Filter by payment status
     if payment_status:
-        bill_ids = [bill["_id"] for bill in bills]
-        payments = list(db.payments.find({
-            "bill_id": {"$in": bill_ids},
-            "payment_status": payment_status
-        }))
+        bill_ids = [bill["id"] for bill in bills]
+        payments = payments_table.find(filters={"payment_status": payment_status})
         payment_bill_ids = {p["bill_id"] for p in payments}
-        bills = [b for b in bills if b["_id"] in payment_bill_ids]
+        bills = [b for b in bills if b["id"] in payment_bill_ids]
     
     return [bill_helper(b) for b in bills]
 
 
 @router.post("", response_model=BillResponse, status_code=status.HTTP_201_CREATED)
-async def create_bill(bill: BillCreate, db: Database = Depends(get_database)):
-    """
-    Create a new bill
-    - Validates stock availability
-    - Generates bill number
-    - Creates payment record
-    - Reduces inventory stock
-    """
+async def create_bill(bill: BillCreate):
+    """Create a new bill"""
+    bills_table = get_bills_table()
+    payments_table = get_payments_table()
+    
     try:
-        bill_doc, payment_doc = await create_bill_with_payment(db, bill)
-        return bill_helper(bill_doc)
+        # Convert items to dicts
+        items_data = [item.model_dump() for item in bill.items]
+        
+        # Validate stock
+        await validate_stock_availability(items_data)
+        
+        # Generate bill number
+        bill_number = await generate_bill_number()
+        
+        # Determine bill date
+        now_ist = datetime.now(IST).replace(tzinfo=None)
+        bill_date = bill.bill_date if bill.bill_date else now_ist
+        
+        # Create bill document
+        bill_doc = {
+            "bill_number": bill_number,
+            "batch_number": bill.batch_number,
+            "customer_name": bill.customer_name,
+            "customer_phone": bill.customer_phone,
+            "customer_address": bill.customer_address,
+            "bill_date": bill_date.isoformat(),
+            "items": items_data,
+            "bill_total": bill.bill_total,
+            "order_source": bill.order_source.value,
+            "created_by": bill.created_by,
+            "created_at": now_ist.isoformat(),
+            "notes": bill.notes
+        }
+        
+        new_bill = bills_table.insert_one(bill_doc)
+        
+        # Create payment record
+        payment_doc = {
+            "bill_id": new_bill["id"],
+            "bill_number": bill_number,
+            "bill_total": bill.bill_total,
+            "payment_status": "Pending",
+            "delivery_status": "Pending",
+            "amount_paid": 0.0,
+            "balance_due": bill.bill_total,
+            "payment_mode": None,
+            "payment_date": None,
+            "payment_completed_date": None,
+            "updated_at": datetime.utcnow().isoformat(),
+            "updated_by": None,
+            "notes": None
+        }
+        payments_table.insert_one(payment_doc)
+        
+        # Reduce stock
+        await reduce_stock(items_data)
+        
+        return bill_helper(new_bill)
+    
     except HTTPException:
         raise
     except Exception as e:
@@ -98,15 +220,11 @@ async def create_bill(bill: BillCreate, db: Database = Depends(get_database)):
 
 
 @router.get("/{bill_id}", response_model=BillResponse)
-async def get_bill(bill_id: str, db: Database = Depends(get_database)):
+async def get_bill(bill_id: int):
     """Get bill by ID"""
-    try:
-        bill = db.bills.find_one({"_id": ObjectId(bill_id)})
-    except:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid bill ID format"
-        )
+    bills_table = get_bills_table()
+    
+    bill = bills_table.find_one(id=bill_id)
     
     if not bill:
         raise HTTPException(
@@ -116,27 +234,35 @@ async def get_bill(bill_id: str, db: Database = Depends(get_database)):
     
     return bill_helper(bill)
 
+
 @router.delete("/{bill_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_bill(bill_id: str, db: Database = Depends(get_database)):
-    """
-    Delete a bill permanently
-    - Restores inventory stock
-    - Deletes bill document
-    - Deletes payment document
-    """
+async def delete_bill(bill_id: int):
+    """Delete a bill permanently"""
+    bills_table = get_bills_table()
+    payments_table = get_payments_table()
+    
     try:
-        bill = db.bills.find_one({"_id": ObjectId(bill_id)})
+        bill = bills_table.find_one(id=bill_id)
         if not bill:
             raise HTTPException(status_code=404, detail="Bill not found")
-
-        # 1. Restore Stock
-        if "items" in bill and bill["items"]:
-            await restore_stock(db, bill["items"])
-
-        # 2. Delete Bill and Payment
-        db.bills.delete_one({"_id": ObjectId(bill_id)})
-        db.payments.delete_one({"bill_id": ObjectId(bill_id)})
-
+        
+        # Parse items if string
+        items = bill.get("items", [])
+        if isinstance(items, str):
+            items = json.loads(items)
+        
+        # Restore stock
+        if items:
+            await restore_stock(items)
+        
+        # Delete payment
+        payment = payments_table.find_one(filters={"bill_id": bill_id})
+        if payment:
+            payments_table.delete_one(payment["id"])
+        
+        # Delete bill
+        bills_table.delete_one(bill_id)
+    
     except HTTPException:
         raise
     except Exception as e:
@@ -144,65 +270,53 @@ async def delete_bill(bill_id: str, db: Database = Depends(get_database)):
 
 
 @router.delete("/{bill_id}/items/{item_index}", response_model=BillResponse)
-async def delete_bill_item(bill_id: str, item_index: int, db: Database = Depends(get_database)):
-    """
-    Remove a single item from a bill
-    - Restores stock for that item
-    - Recalculates total
-    - Updates bill and payment
-    """
+async def delete_bill_item(bill_id: int, item_index: int):
+    """Remove a single item from a bill"""
+    bills_table = get_bills_table()
+    payments_table = get_payments_table()
+    
     try:
-        bill = db.bills.find_one({"_id": ObjectId(bill_id)})
+        bill = bills_table.find_one(id=bill_id)
         if not bill:
             raise HTTPException(status_code=404, detail="Bill not found")
-
+        
         items = bill.get("items", [])
+        if isinstance(items, str):
+            items = json.loads(items)
+        
         if item_index < 0 or item_index >= len(items):
             raise HTTPException(status_code=400, detail="Invalid item index")
-
-        # 1. Identify and Restore Stock for the specific item
+        
+        # Restore stock for removed item
         item_to_remove = items[item_index]
-        await restore_stock(db, [item_to_remove])
-
-        # 2. Remove item and recalculate total
+        await restore_stock([item_to_remove])
+        
+        # Remove item and recalculate total
         items.pop(item_index)
         new_total = sum(i.get("item_total", 0) for i in items)
         new_total = round(new_total, 2)
-
-        # 3. Update Bill
-        db.bills.update_one(
-            {"_id": ObjectId(bill_id)},
-            {
-                "$set": {
-                    "items": items,
-                    "bill_total": new_total,
-                    "updated_at": datetime.utcnow()
-                }
-            }
-        )
-
-        # 4. Update Payment (balance due usually changes)
-        # Note: If amount_paid > new_total, balance might be negative (credit)
-        payment = db.payments.find_one({"bill_id": ObjectId(bill_id)})
+        
+        # Update bill
+        updated_bill = bills_table.update_one(bill_id, {
+            "items": items,
+            "bill_total": new_total,
+            "updated_at": datetime.utcnow().isoformat()
+        })
+        
+        # Update payment
+        payment = payments_table.find_one(filters={"bill_id": bill_id})
         if payment:
             paid = payment.get("amount_paid", 0)
             new_balance = new_total - paid
             
-            db.payments.update_one(
-                {"bill_id": ObjectId(bill_id)},
-                {
-                    "$set": {
-                        "bill_total": new_total,
-                        "balance_due": new_balance,
-                        "updated_at": datetime.utcnow()
-                    }
-                }
-            )
-
-        # Return updated bill
-        updated_bill = db.bills.find_one({"_id": ObjectId(bill_id)})
+            payments_table.update_one(payment["id"], {
+                "bill_total": new_total,
+                "balance_due": new_balance,
+                "updated_at": datetime.utcnow().isoformat()
+            })
+        
         return bill_helper(updated_bill)
-
+    
     except HTTPException:
         raise
     except Exception as e:

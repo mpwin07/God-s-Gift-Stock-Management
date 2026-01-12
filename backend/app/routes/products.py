@@ -1,8 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from app.database import get_database
+from app.wowsql_client import products as get_products_table, inventory as get_inventory_table
 from app.models.product import ProductCreate, ProductUpdate, ProductResponse
-from pymongo.database import Database
-from bson import ObjectId
 from datetime import datetime
 from typing import List, Optional
 
@@ -10,71 +8,76 @@ router = APIRouter(prefix="/products", tags=["Products"])
 
 
 def product_helper(product: dict) -> dict:
-    """Convert MongoDB document to response format"""
-    product["_id"] = str(product["_id"])
+    """Convert WowSQL record to response format"""
+    # WowSQL uses 'id' directly, no conversion needed
     return product
 
 
 @router.get("", response_model=List[ProductResponse])
 async def get_products(
     category: Optional[str] = Query(None, description="Filter by category"),
-    is_active: bool = Query(True, description="Filter by active status"),
-    db: Database = Depends(get_database)
+    is_active: bool = Query(True, description="Filter by active status")
 ):
     """Get all products with optional filters"""
-    query = {"is_active": is_active}
+    products_table = get_products_table()
     
+    filters = {"is_active": is_active}
     if category:
-        query["category"] = category
+        filters["category"] = category
     
-    products = list(db.products.find(query).sort("name", 1))
+    products = products_table.find(filters=filters, order_by="name", order_dir="asc")
     return [product_helper(p) for p in products]
 
 
 @router.post("", response_model=ProductResponse, status_code=status.HTTP_201_CREATED)
-async def create_product(product: ProductCreate, db: Database = Depends(get_database)):
+async def create_product(product: ProductCreate):
     """Create a new product"""
+    products_table = get_products_table()
+    inventory_table = get_inventory_table()
+    
     # Check if product name already exists
-    existing = db.products.find_one({"name": product.name})
+    existing = products_table.find_one(filters={"name": product.name})
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Product with name '{product.name}' already exists"
         )
     
-    product_doc = {
-        **product.model_dump(),
-        "created_at": datetime.utcnow(),
-        "updated_at": datetime.utcnow(),
-        "is_active": True
+    # Prepare product data
+    product_data = {
+        "name": product.name,
+        "category": product.category.value,
+        "unit": product.unit.value,
+        "rate": product.rate,
+        "base_weight": product.base_weight,
+        "min_stock_alert": product.min_stock_alert,
+        "is_active": True,
+        "created_at": datetime.utcnow().isoformat(),
+        "updated_at": datetime.utcnow().isoformat()
     }
     
-    result = db.products.insert_one(product_doc)
-    product_doc["_id"] = result.inserted_id
+    # Insert product
+    new_product = products_table.insert_one(product_data)
     
     # Create inventory record for this product
-    inventory_doc = {
-        "product_id": result.inserted_id,
+    inventory_data = {
+        "product_id": new_product["id"],
         "current_stock": 0.0,
         "unit": product.unit.value,
-        "last_updated": datetime.utcnow(),
+        "last_updated": datetime.utcnow().isoformat(),
         "last_updated_by": None
     }
-    db.inventory.insert_one(inventory_doc)
+    inventory_table.insert_one(inventory_data)
     
-    return product_helper(product_doc)
+    return product_helper(new_product)
 
 
 @router.get("/{product_id}", response_model=ProductResponse)
-async def get_product(product_id: str, db: Database = Depends(get_database)):
+async def get_product(product_id: int):
     """Get product by ID"""
-    try:
-        product = db.products.find_one({"_id": ObjectId(product_id)})
-    except:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid product ID format"
-        )
+    products_table = get_products_table()
+    
+    product = products_table.find_one(id=product_id)
     
     if not product:
         raise HTTPException(
@@ -87,21 +90,15 @@ async def get_product(product_id: str, db: Database = Depends(get_database)):
 
 @router.put("/{product_id}", response_model=ProductResponse)
 async def update_product(
-    product_id: str,
-    product_update: ProductUpdate,
-    db: Database = Depends(get_database)
+    product_id: int,
+    product_update: ProductUpdate
 ):
     """Update product"""
-    try:
-        obj_id = ObjectId(product_id)
-    except:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid product ID format"
-        )
+    products_table = get_products_table()
+    inventory_table = get_inventory_table()
     
     # Check if product exists
-    existing = db.products.find_one({"_id": obj_id})
+    existing = products_table.find_one(id=product_id)
     if not existing:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -109,7 +106,12 @@ async def update_product(
         )
     
     # Prepare update data
-    update_data = {k: v for k, v in product_update.model_dump(exclude_unset=True).items()}
+    update_data = {}
+    for field, value in product_update.model_dump(exclude_unset=True).items():
+        if hasattr(value, 'value'):  # Handle enums
+            update_data[field] = value.value
+        else:
+            update_data[field] = value
     
     if not update_data:
         raise HTTPException(
@@ -117,46 +119,35 @@ async def update_product(
             detail="No fields to update"
         )
     
-    update_data["updated_at"] = datetime.utcnow()
+    update_data["updated_at"] = datetime.utcnow().isoformat()
     
     # Update product
-    db.products.update_one(
-        {"_id": obj_id},
-        {"$set": update_data}
-    )
+    updated_product = products_table.update_one(product_id, update_data)
     
     # If unit changed, update inventory
     if "unit" in update_data:
-        db.inventory.update_one(
-            {"product_id": obj_id},
-            {"$set": {"unit": update_data["unit"].value if hasattr(update_data["unit"], "value") else update_data["unit"]}}
-        )
+        inventory = inventory_table.find_one(filters={"product_id": product_id})
+        if inventory:
+            inventory_table.update_one(inventory["id"], {"unit": update_data["unit"]})
     
-    # Get updated product
-    updated_product = db.products.find_one({"_id": obj_id})
     return product_helper(updated_product)
 
 
 @router.delete("/{product_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_product(product_id: str, db: Database = Depends(get_database)):
+async def delete_product(product_id: int):
     """Soft delete product (set is_active to False)"""
-    try:
-        obj_id = ObjectId(product_id)
-    except:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid product ID format"
-        )
+    products_table = get_products_table()
     
-    result = db.products.update_one(
-        {"_id": obj_id},
-        {"$set": {"is_active": False, "updated_at": datetime.utcnow()}}
-    )
-    
-    if result.matched_count == 0:
+    existing = products_table.find_one(id=product_id)
+    if not existing:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Product not found"
         )
+    
+    products_table.update_one(product_id, {
+        "is_active": False,
+        "updated_at": datetime.utcnow().isoformat()
+    })
     
     return None

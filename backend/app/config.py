@@ -5,8 +5,9 @@ from functools import lru_cache
 class Settings(BaseSettings):
     """Application settings loaded from environment variables"""
     
-    # MongoDB
-    MONGODB_URI: str
+    # WowSQL
+    WOWSQL_BASE_URL: str
+    WOWSQL_API_KEY: str
     
     # JWT
     JWT_SECRET_KEY: str
@@ -31,3 +32,4 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Get cached settings instance"""
     return Settings()
+

@@ -40,7 +40,7 @@ class ProductUpdate(BaseModel):
 
 class ProductResponse(BaseModel):
     """Product response model"""
-    id: str = Field(..., alias="_id")
+    id: int
     name: str
     category: str
     unit: str

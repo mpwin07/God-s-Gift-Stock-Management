@@ -35,8 +35,8 @@ class PaymentUpdate(BaseModel):
 
 class PaymentResponse(BaseModel):
     """Payment response model"""
-    id: str = Field(..., alias="_id")
-    bill_id: str
+    id: int
+    bill_id: int
     bill_number: str
     bill_total: float
     payment_status: str

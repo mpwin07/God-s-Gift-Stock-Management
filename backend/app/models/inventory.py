@@ -11,8 +11,8 @@ class InventoryUpdate(BaseModel):
 
 class InventoryResponse(BaseModel):
     """Inventory response model"""
-    id: str = Field(..., alias="_id")
-    product_id: str
+    id: int
+    product_id: int
     product_name: Optional[str] = None  # Populated via join
     current_stock: float
     unit: str

@@ -56,7 +56,7 @@ class BillCreate(BaseModel):
 
 class BillResponse(BaseModel):
     """Bill response model"""
-    id: str = Field(..., alias="_id")
+    id: int
     bill_number: str
     batch_number: Optional[str]
     customer_name: str

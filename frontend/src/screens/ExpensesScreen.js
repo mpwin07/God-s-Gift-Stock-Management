@@ -119,7 +119,7 @@ const ExpensesScreen = ({ navigation }) => {
                     style: 'destructive',
                     onPress: async () => {
                         try {
-                            await deleteExpense(expense._id);
+                            await deleteExpense(expense.id);
                             successHaptic();
                             Toast.show({ type: 'success', text1: 'Expense Deleted' });
                             loadData();
@@ -204,7 +204,7 @@ const ExpensesScreen = ({ navigation }) => {
                     <View style={styles.dateGroup}>
                         <Text style={styles.dateHeader}>{group.date}</Text>
                         {group.items.map((expense) => (
-                            <ExpenseCard key={expense._id} item={expense} />
+                            <ExpenseCard key={expense.id?.toString()} item={expense} />
                         ))}
                     </View>
                 )}

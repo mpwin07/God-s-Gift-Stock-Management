@@ -8,7 +8,9 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.10.0
-      - key: MONGODB_URI
+      - key: WOWSQL_BASE_URL
+        sync: false
+      - key: WOWSQL_API_KEY
         sync: false
       - key: JWT_SECRET_KEY
         sync: false

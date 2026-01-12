@@ -15,7 +15,7 @@ class ExpenseCreate(BaseModel):
 
 class ExpenseResponse(BaseModel):
     """Expense response model"""
-    id: str = Field(..., alias="_id")
+    id: int
     name: str
     expense_date: datetime
     price: float

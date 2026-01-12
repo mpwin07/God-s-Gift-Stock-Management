@@ -50,11 +50,11 @@ const BillsHistoryScreen = ({ navigation }) => {
             const paymentData = {};
             for (const bill of billsArray) {
                 try {
-                    const payment = await getPaymentByBill(bill._id);
-                    paymentData[bill._id] = payment;
+                    const payment = await getPaymentByBill(bill.id);
+                    paymentData[bill.id] = payment;
                 } catch (e) {
                     // Default: both pending
-                    paymentData[bill._id] = {
+                    paymentData[bill.id] = {
                         payment_status: 'Pending',
                         delivery_status: 'Pending',
                     };
@@ -88,7 +88,7 @@ const BillsHistoryScreen = ({ navigation }) => {
     // Toggle Payment Status
     const togglePayment = async (bill) => {
         mediumHaptic();
-        const isCurrentlyPaid = isPaymentDone(bill._id);
+        const isCurrentlyPaid = isPaymentDone(bill.id);
 
         if (!isCurrentlyPaid) {
             // Show payment mode selector
@@ -96,17 +96,17 @@ const BillsHistoryScreen = ({ navigation }) => {
             setShowPaymentModal(true);
         } else {
             // Unmark as paid
-            const payment = payments[bill._id];
+            const payment = payments[bill.id];
             try {
-                if (payment?._id) {
-                    await updatePayment(payment._id, {
+                if (payment?.id) {
+                    await updatePayment(payment.id, {
                         payment_status: 'Pending',
                         amount_paid: 0,
                     });
                 }
                 setPayments(prev => ({
                     ...prev,
-                    [bill._id]: { ...prev[bill._id], payment_status: 'Pending' }
+                    [bill.id]: { ...prev[bill.id], payment_status: 'Pending' }
                 }));
             } catch (error) {
                 Toast.show({ type: 'error', text1: 'Update Failed' });
@@ -117,11 +117,11 @@ const BillsHistoryScreen = ({ navigation }) => {
     // Confirm payment with mode
     const confirmPaymentWithMode = async (mode) => {
         const bill = selectedBillForPayment;
-        const payment = payments[bill._id];
+        const payment = payments[bill.id];
 
         try {
-            if (payment?._id) {
-                await updatePayment(payment._id, {
+            if (payment?.id) {
+                await updatePayment(payment.id, {
                     payment_status: 'Completed',
                     amount_paid: bill.bill_total,
                     payment_mode: mode,
@@ -130,8 +130,8 @@ const BillsHistoryScreen = ({ navigation }) => {
 
             setPayments(prev => ({
                 ...prev,
-                [bill._id]: {
-                    ...prev[bill._id],
+                [bill.id]: {
+                    ...prev[bill.id],
                     payment_status: 'Completed',
                     delivery_status: 'Completed',
                     payment_mode: mode,
@@ -155,19 +155,19 @@ const BillsHistoryScreen = ({ navigation }) => {
     // Toggle Delivery Status
     const toggleDelivery = async (bill) => {
         mediumHaptic();
-        const payment = payments[bill._id];
-        const newStatus = isDeliveryDone(bill._id) ? 'Pending' : 'Completed';
+        const payment = payments[bill.id];
+        const newStatus = isDeliveryDone(bill.id) ? 'Pending' : 'Completed';
 
         try {
-            if (payment?._id) {
-                await updatePayment(payment._id, {
+            if (payment?.id) {
+                await updatePayment(payment.id, {
                     delivery_status: newStatus,
                 });
             }
 
             setPayments(prev => ({
                 ...prev,
-                [bill._id]: { ...prev[bill._id], delivery_status: newStatus }
+                [bill.id]: { ...prev[bill.id], delivery_status: newStatus }
             }));
 
             if (newStatus === 'Completed') {
@@ -221,9 +221,9 @@ const BillsHistoryScreen = ({ navigation }) => {
         )
         : bills;
 
-    const inProgressBills = searchedBills.filter(b => !isDeliveryDone(b._id));
-    const deliveredBills = searchedBills.filter(b => isDeliveryDone(b._id) && !isPaymentDone(b._id));
-    const doneBills = searchedBills.filter(b => isPaymentDone(b._id));
+    const inProgressBills = searchedBills.filter(b => !isDeliveryDone(b.id));
+    const deliveredBills = searchedBills.filter(b => isDeliveryDone(b.id) && !isPaymentDone(b.id));
+    const doneBills = searchedBills.filter(b => isPaymentDone(b.id));
 
     const filteredBills =
         filter === 'inprogress' ? inProgressBills :
@@ -248,12 +248,12 @@ const BillsHistoryScreen = ({ navigation }) => {
     // Bill Card with TWO status toggles
     const BillCard = ({ item }) => {
         const scaleAnim = useRef(new Animated.Value(1)).current;
-        const paymentDone = isPaymentDone(item._id);
-        const deliveryDone = isDeliveryDone(item._id);
+        const paymentDone = isPaymentDone(item.id);
+        const deliveryDone = isDeliveryDone(item.id);
 
         const handlePress = () => {
             lightHaptic();
-            navigation.navigate('BillDetail', { billId: item._id });
+            navigation.navigate('BillDetail', { billId: item.id });
         };
 
         return (
@@ -432,7 +432,7 @@ const BillsHistoryScreen = ({ navigation }) => {
                             <View style={styles.dateLine} />
                         </View>
                         {group.items.map((bill) => (
-                            <BillCard key={bill._id} item={bill} />
+                            <BillCard key={bill.id?.toString()} item={bill} />
                         ))}
                     </View>
                 )}
@@ -510,7 +510,7 @@ const BillsHistoryScreen = ({ navigation }) => {
 
                         <FlatList
                             data={customerOrders}
-                            keyExtractor={(item) => item._id}
+                            keyExtractor={(item) => item.id?.toString()}
                             style={styles.customerHistoryList}
                             renderItem={({ item }) => (
                                 <TouchableOpacity
@@ -518,7 +518,7 @@ const BillsHistoryScreen = ({ navigation }) => {
                                     onPress={() => {
                                         setShowCustomerHistory(false);
                                         setSelectedCustomer(null);
-                                        navigation.navigate('BillDetail', { billId: item._id });
+                                        navigation.navigate('BillDetail', { billId: item.id });
                                     }}
                                 >
                                     <View>
