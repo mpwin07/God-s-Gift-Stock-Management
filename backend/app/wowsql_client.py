@@ -202,35 +202,24 @@ class WowSQLTable:
             
             result = self.table.insert(processed_data)
             
-            # Extract ID from various possible response formats
+            # WowSQL SDK returns: {'id': X, 'message': 'Record created successfully'}
             inserted_id = None
             
-            if hasattr(result, 'id'):
+            if isinstance(result, dict) and "id" in result:
+                inserted_id = result["id"]
+            elif hasattr(result, 'id'):
                 inserted_id = result.id
-            elif hasattr(result, 'data'):
-                # SDK response object with .data attribute
-                if isinstance(result.data, dict):
-                    inserted_id = result.data.get("id")
-                elif isinstance(result.data, list) and len(result.data) > 0:
-                    inserted_id = result.data[0].get("id")
-            elif isinstance(result, dict):
-                if "id" in result:
-                    inserted_id = result["id"]
-                elif "data" in result:
-                    if isinstance(result["data"], dict):
-                        inserted_id = result["data"].get("id")
-                    elif isinstance(result["data"], list) and len(result["data"]) > 0:
-                        inserted_id = result["data"][0].get("id")
-            elif isinstance(result, list) and len(result) > 0:
-                inserted_id = result[0].get("id")
             
             if inserted_id is not None:
-                processed_data["id"] = inserted_id
-                # Fetch the complete record to return proper data
+                # Fetch and return the complete inserted record
                 fetched = self.find_one(id=inserted_id)
                 if fetched:
                     return fetched
+                # Fallback: return processed data with ID
+                processed_data["id"] = inserted_id
+                return processed_data
             
+            # Fallback: if no ID found, return processed data
             return processed_data
         except Exception as e:
             print(f"WowSQL insert error: {e}")
