@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from app.wowsql_client import products as get_products_table, inventory as get_inventory_table
+from app.wowsql_client import products as get_products_table
 from app.models.product import ProductCreate, ProductUpdate, ProductResponse
 from datetime import datetime
 from typing import List, Optional
@@ -33,7 +33,6 @@ async def get_products(
 async def create_product(product: ProductCreate):
     """Create a new product"""
     products_table = get_products_table()
-    inventory_table = get_inventory_table()
     
     # Check if product name already exists
     existing = products_table.find_one(filters={"name": product.name})
@@ -58,16 +57,6 @@ async def create_product(product: ProductCreate):
     
     # Insert product
     new_product = products_table.insert_one(product_data)
-    
-    # Create inventory record for this product
-    inventory_data = {
-        "product_id": new_product["id"],
-        "current_stock": 0.0,
-        "unit": product.unit.value,
-        "last_updated": datetime.utcnow().isoformat(),
-        "last_updated_by": None
-    }
-    inventory_table.insert_one(inventory_data)
     
     return product_helper(new_product)
 
@@ -95,7 +84,6 @@ async def update_product(
 ):
     """Update product"""
     products_table = get_products_table()
-    inventory_table = get_inventory_table()
     
     # Check if product exists
     existing = products_table.find_one(id=product_id)
@@ -124,12 +112,6 @@ async def update_product(
     # Update product
     updated_product = products_table.update_one(product_id, update_data)
     
-    # If unit changed, update inventory
-    if "unit" in update_data:
-        inventory = inventory_table.find_one(filters={"product_id": product_id})
-        if inventory:
-            inventory_table.update_one(inventory["id"], {"unit": update_data["unit"]})
-    
     return product_helper(updated_product)
 
 
@@ -151,3 +133,4 @@ async def delete_product(product_id: int):
     })
     
     return None
+

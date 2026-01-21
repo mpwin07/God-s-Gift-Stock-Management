@@ -20,7 +20,7 @@ export const API_ENDPOINTS = {
     PRODUCTS: '/products',
     PRODUCT_BY_ID: (id) => `/products/${id}`,
 
-    // Inventory
+    // Inventory (deprecated - no longer used)
     INVENTORY: '/inventory',
     INVENTORY_BY_PRODUCT: (productId) => `/inventory/${productId}`,
     LOW_STOCK: '/inventory/low-stock',
@@ -39,7 +39,7 @@ export const API_ENDPOINTS = {
     DASHBOARD_ANALYTICS: '/dashboard/analytics',
 
     // Expenses
-    EXPENSES: '/expenses',
+    EXPENSES: '/expenses/',
     EXPENSE_BY_ID: (id) => `/expenses/${id}`,
     EXPENSES_MONTHLY: '/expenses/monthly-totals',
 };

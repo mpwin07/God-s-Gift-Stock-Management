@@ -5,7 +5,8 @@ import { API_BASE_URL } from '../config/api';
 // Create axios instance
 const apiClient = axios.create({
     baseURL: API_BASE_URL,
-    timeout: 10000,
+    timeout: 30000, // 30 seconds for Render cold starts
+    maxRedirects: 5, // Follow redirects
     headers: {
         'Content-Type': 'application/json',
     },

@@ -18,6 +18,7 @@ import Button from '../components/Button';
 import { colors, spacing, fontSize, borderRadius } from '../config/theme';
 import { getBillById, getPaymentByBill, updatePayment, deleteBill, deleteBillItem } from '../api/endpoints';
 import Toast from 'react-native-toast-message';
+import { formatErrorMessage } from '../utils/formatError';
 
 const BillDetailScreen = ({ route, navigation }) => {
     const { billId } = route.params;
@@ -82,7 +83,7 @@ const BillDetailScreen = ({ route, navigation }) => {
     const handleDeleteBill = () => {
         Alert.alert(
             'Delete Bill',
-            'Are you sure? This will delete the bill permanently and RESTORE STOCK.',
+            'Are you sure? This will delete the bill permanently.',
             [
                 { text: 'Cancel', style: 'cancel' },
                 {
@@ -92,7 +93,7 @@ const BillDetailScreen = ({ route, navigation }) => {
                         try {
                             setLoading(true);
                             await deleteBill(billId);
-                            Toast.show({ type: 'success', text1: 'Bill Deleted', text2: 'Stock restored' });
+                            Toast.show({ type: 'success', text1: 'Bill Deleted' });
                             navigation.goBack();
                         } catch (error) {
                             Alert.alert('Error', 'Failed to delete bill');
@@ -108,7 +109,7 @@ const BillDetailScreen = ({ route, navigation }) => {
     const handleRemoveItem = (index) => {
         Alert.alert(
             'Remove Item',
-            'Remove this item? Stock will be restored.',
+            'Remove this item from the bill?',
             [
                 { text: 'Cancel', style: 'cancel' },
                 {
@@ -227,7 +228,7 @@ const BillDetailScreen = ({ route, navigation }) => {
             const updatedPayment = await getPaymentByBill(billId);
             setPayment(updatedPayment); // Specific reload
         } catch (error) {
-            Alert.alert('Error', error.response?.data?.detail || 'Failed to update payment');
+            Alert.alert('Error', formatErrorMessage(error.response?.data?.detail) || 'Failed to update payment');
         }
     };
 

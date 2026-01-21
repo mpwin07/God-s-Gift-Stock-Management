@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends
-from app.wowsql_client import bills as get_bills_table, payments as get_payments_table, inventory as get_inventory_table, products as get_products_table
+from app.wowsql_client import bills as get_bills_table, payments as get_payments_table
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Any
 from pydantic import BaseModel
@@ -17,7 +17,7 @@ class DashboardStats(BaseModel):
     today_bills_count: int
     total_pending_payments: int
     total_pending_amount: float
-    low_stock_count: int
+    low_stock_count: int = 0  # Kept for backward compatibility, always 0
 
 
 class ProductSales(BaseModel):
@@ -49,12 +49,9 @@ async def get_dashboard_stats():
     - Today's bills count
     - Pending payments count
     - Total pending amount
-    - Low stock alerts count
     """
     bills_table = get_bills_table()
     payments_table = get_payments_table()
-    inventory_table = get_inventory_table()
-    products_table = get_products_table()
     
     # Use IST for "today" calculation
     now_ist = datetime.now(IST)
@@ -89,24 +86,12 @@ async def get_dashboard_stats():
     total_pending_payments = len(pending_payments)
     total_pending_amount = sum(p.get("balance_due", 0) for p in pending_payments)
     
-    # Low stock count
-    all_inventory = inventory_table.find()
-    all_products = products_table.find()
-    products_map = {p["id"]: p for p in all_products}
-    
-    low_stock_count = 0
-    for inv in all_inventory:
-        product = products_map.get(inv["product_id"])
-        if product and product.get("is_active", True):
-            if inv["current_stock"] < product.get("min_stock_alert", 10):
-                low_stock_count += 1
-    
     return DashboardStats(
         today_sales=round(today_sales, 2),
         today_bills_count=today_bills_count,
         total_pending_payments=total_pending_payments,
         total_pending_amount=round(total_pending_amount, 2),
-        low_stock_count=low_stock_count
+        low_stock_count=0  # No longer tracking stock
     )
 
 

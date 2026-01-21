@@ -3,7 +3,7 @@ Database diagnostic endpoint for troubleshooting connection issues.
 """
 
 from fastapi import APIRouter
-from app.wowsql_client import get_client, products, bills, payments, inventory, expenses
+from app.wowsql_client import get_client, products, bills, payments, expenses
 from app.config import get_settings
 
 router = APIRouter(prefix="/debug", tags=["Debug"])
@@ -24,7 +24,6 @@ async def db_status():
         bills_count = len(bills().find())
         payments_count = len(payments().find())
         products_count = len(products().find())
-        inventory_count = len(inventory().find())
         expenses_count = len(expenses().find())
         
         return {
@@ -36,7 +35,6 @@ async def db_status():
                 "bills": bills_count,
                 "payments": payments_count,
                 "products": products_count,
-                "inventory": inventory_count,
                 "expenses": expenses_count,
             },
             "message": f"Connected to WowSQL with {bills_count} bills"

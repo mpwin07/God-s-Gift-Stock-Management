@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from app.wowsql_client import bills as get_bills_table, payments as get_payments_table, inventory as get_inventory_table, bill_sequences as get_sequences_table
+from app.wowsql_client import bills as get_bills_table, payments as get_payments_table, bill_sequences as get_sequences_table
 from app.models.bill import BillCreate, BillResponse
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
@@ -37,63 +37,6 @@ async def generate_bill_number() -> str:
     
     bill_number = f"BILL-{date_str}-{new_seq:04d}"
     return bill_number
-
-
-async def validate_stock_availability(items: List[dict]) -> None:
-    """Validate that sufficient stock is available for all items"""
-    inventory_table = get_inventory_table()
-    
-    for item in items:
-        product_id = int(item["product_id"])
-        inventory = inventory_table.find_one(filters={"product_id": product_id})
-        
-        if not inventory:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Product {item['product_name']} not found in inventory"
-            )
-        
-        if inventory["current_stock"] < item["quantity"]:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Insufficient stock for {item['product_name']}. Available: {inventory['current_stock']}, Required: {item['quantity']}"
-            )
-
-
-async def reduce_stock(items: List[dict]) -> None:
-    """Reduce stock for all items in the bill"""
-    inventory_table = get_inventory_table()
-    
-    for item in items:
-        product_id = int(item["product_id"])
-        inventory = inventory_table.find_one(filters={"product_id": product_id})
-        
-        if inventory:
-            new_stock = inventory["current_stock"] - item["quantity"]
-            inventory_table.update_one(inventory["id"], {
-                "current_stock": new_stock,
-                "last_updated": datetime.utcnow().isoformat()
-            })
-
-
-async def restore_stock(items: List[dict]) -> None:
-    """Restore stock for a list of items"""
-    inventory_table = get_inventory_table()
-    
-    for item in items:
-        p_id = item.get("product_id")
-        qty = item.get("quantity", 0)
-        
-        if p_id and qty:
-            product_id = int(p_id)
-            inventory = inventory_table.find_one(filters={"product_id": product_id})
-            
-            if inventory:
-                new_stock = inventory["current_stock"] + qty
-                inventory_table.update_one(inventory["id"], {
-                    "current_stock": new_stock,
-                    "last_updated": datetime.utcnow().isoformat()
-                })
 
 
 @router.get("", response_model=List[BillResponse])
@@ -159,9 +102,6 @@ async def create_bill(bill: BillCreate):
         # Convert items to dicts
         items_data = [item.model_dump() for item in bill.items]
         
-        # Validate stock
-        await validate_stock_availability(items_data)
-        
         # Generate bill number
         bill_number = await generate_bill_number()
         
@@ -205,9 +145,6 @@ async def create_bill(bill: BillCreate):
         }
         payments_table.insert_one(payment_doc)
         
-        # Reduce stock
-        await reduce_stock(items_data)
-        
         return bill_helper(new_bill)
     
     except HTTPException:
@@ -246,15 +183,6 @@ async def delete_bill(bill_id: int):
         if not bill:
             raise HTTPException(status_code=404, detail="Bill not found")
         
-        # Parse items if string
-        items = bill.get("items", [])
-        if isinstance(items, str):
-            items = json.loads(items)
-        
-        # Restore stock
-        if items:
-            await restore_stock(items)
-        
         # Delete payment
         payment = payments_table.find_one(filters={"bill_id": bill_id})
         if payment:
@@ -286,10 +214,6 @@ async def delete_bill_item(bill_id: int, item_index: int):
         
         if item_index < 0 or item_index >= len(items):
             raise HTTPException(status_code=400, detail="Invalid item index")
-        
-        # Restore stock for removed item
-        item_to_remove = items[item_index]
-        await restore_stock([item_to_remove])
         
         # Remove item and recalculate total
         items.pop(item_index)

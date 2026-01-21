@@ -1,5 +1,5 @@
 import React from 'react';
-import { Text } from 'react-native';
+import { Text, View, StyleSheet } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -20,9 +20,36 @@ import { colors } from '../config/theme';
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
 
-const TabIcon = ({ emoji }) => (
-    <Text style={{ fontSize: 24 }}>{emoji}</Text>
+// Tab icon with active highlight indicator
+const TabIcon = ({ emoji, focused }) => (
+    <View style={styles.tabIconContainer}>
+        {focused && <View style={styles.activeIndicator} />}
+        <Text style={[styles.tabEmoji, focused && styles.tabEmojiActive]}>{emoji}</Text>
+    </View>
 );
+
+const styles = StyleSheet.create({
+    tabIconContainer: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingTop: 4,
+    },
+    activeIndicator: {
+        position: 'absolute',
+        top: -2,
+        width: 6,
+        height: 6,
+        borderRadius: 3,
+        backgroundColor: colors.primary,
+    },
+    tabEmoji: {
+        fontSize: 22,
+    },
+    tabEmojiActive: {
+        fontSize: 26,
+        transform: [{ translateY: -2 }],
+    },
+});
 
 const MainTabs = () => {
     return (
@@ -34,6 +61,14 @@ const MainTabs = () => {
                 tabBarStyle: {
                     backgroundColor: colors.surface,
                     borderTopColor: colors.border,
+                    paddingTop: 6,
+                    paddingBottom: 8,
+                    height: 65,
+                },
+                tabBarLabelStyle: {
+                    fontSize: 11,
+                    fontWeight: '600',
+                    marginTop: 2,
                 },
             }}
         >
@@ -42,7 +77,7 @@ const MainTabs = () => {
                 component={DashboardScreen}
                 options={{
                     tabBarLabel: 'Home',
-                    tabBarIcon: () => <TabIcon emoji="🏠" />,
+                    tabBarIcon: ({ focused }) => <TabIcon emoji="🏠" focused={focused} />,
                 }}
             />
             <Tab.Screen
@@ -50,7 +85,7 @@ const MainTabs = () => {
                 component={BillsHistoryScreen}
                 options={{
                     tabBarLabel: 'Bills',
-                    tabBarIcon: () => <TabIcon emoji="🧾" />,
+                    tabBarIcon: ({ focused }) => <TabIcon emoji="🧾" focused={focused} />,
                 }}
             />
             <Tab.Screen
@@ -58,7 +93,7 @@ const MainTabs = () => {
                 component={ExpensesScreen}
                 options={{
                     tabBarLabel: 'Expenses',
-                    tabBarIcon: () => <TabIcon emoji="💰" />,
+                    tabBarIcon: ({ focused }) => <TabIcon emoji="💰" focused={focused} />,
                 }}
             />
             <Tab.Screen
@@ -66,7 +101,7 @@ const MainTabs = () => {
                 component={AnalyticsScreen}
                 options={{
                     tabBarLabel: 'Analytics',
-                    tabBarIcon: () => <TabIcon emoji="📊" />,
+                    tabBarIcon: ({ focused }) => <TabIcon emoji="📊" focused={focused} />,
                 }}
             />
             <Tab.Screen
@@ -74,7 +109,7 @@ const MainTabs = () => {
                 component={ProductsScreen}
                 options={{
                     tabBarLabel: 'Products',
-                    tabBarIcon: () => <TabIcon emoji="📦" />,
+                    tabBarIcon: ({ focused }) => <TabIcon emoji="📦" focused={focused} />,
                 }}
             />
         </Tab.Navigator>

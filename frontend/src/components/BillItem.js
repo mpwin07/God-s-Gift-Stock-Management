@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Animated } from 'react-native';
+import { View, Text, StyleSheet, Animated, TouchableOpacity } from 'react-native';
 import { colors, fontSize, spacing, borderRadius } from '../config/theme';
 
 const BillItem = ({ item, index, isNew = false, onRemove }) => {

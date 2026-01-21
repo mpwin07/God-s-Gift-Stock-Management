@@ -339,9 +339,9 @@ const DashboardScreen = ({ navigation }) => {
                     </View>
 
                     <View style={[styles.miniStat, { backgroundColor: colors.errorLight }]}>
-                        <Text style={styles.miniStatIcon}>📦</Text>
-                        <Text style={styles.miniStatValue}>{stats?.low_stock_count || 0}</Text>
-                        <Text style={styles.miniStatLabel}>Low Stock</Text>
+                        <Text style={styles.miniStatIcon}>💸</Text>
+                        <Text style={styles.miniStatValue}>₹{stats?.total_pending_amount?.toFixed(0) || 0}</Text>
+                        <Text style={styles.miniStatLabel}>Due</Text>
                     </View>
 
                     <View style={[styles.miniStat, { backgroundColor: colors.infoLight }]}>

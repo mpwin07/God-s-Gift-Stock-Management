@@ -24,6 +24,7 @@ import { colors, spacing, fontSize, borderRadius } from '../config/theme';
 import { getProducts, createBill, getBills } from '../api/endpoints';
 import { useAuth } from '../context/AuthContext';
 import { successHaptic, mediumHaptic, warningHaptic } from '../utils/haptics';
+import { formatErrorMessage } from '../utils/formatError';
 
 const NewBillScreen = ({ navigation, route }) => {
     const { user } = useAuth();
@@ -93,7 +94,15 @@ const NewBillScreen = ({ navigation, route }) => {
         if (duplicateData) {
             setCustomerName(duplicateData.customer_name || '');
             setCustomerPhone(duplicateData.customer_phone || '');
-            setItems(duplicateData.items || []);
+            // Ensure items have proper types for backend
+            const formattedItems = (duplicateData.items || []).map(item => ({
+                ...item,
+                product_id: String(item.product_id),
+                unit: item.unit || 'piece',
+                rate: item.rate || item.unit_price || 0,
+                item_total: item.item_total || (item.quantity * (item.rate || item.unit_price || 0)),
+            }));
+            setItems(formattedItems);
         }
     }, [duplicateData]);
 
@@ -174,7 +183,7 @@ const NewBillScreen = ({ navigation, route }) => {
     // When user selects a product, show rate input modal
     const selectProduct = (product) => {
         setSelectedProduct(product);
-        setItemRate(product.rate ? product.rate.toString() : '');
+        setItemRate(''); // Leave blank by default - user can fill if needed
         setItemGrams('');
         setItemQuantity('1');
         setShowProductPicker(false);
@@ -219,11 +228,10 @@ const NewBillScreen = ({ navigation, route }) => {
         const itemTotal = Math.round(rate * qty * 100) / 100;
 
         const newItem = {
-            product_id: selectedProduct.id,
+            product_id: String(selectedProduct.id),
             product_name: selectedProduct.name,
-            grams: grams,
             quantity: qty,
-            unit: grams > 0 ? 'grams' : selectedProduct.unit,
+            unit: grams > 0 ? 'grams' : (selectedProduct.unit || 'piece'),
             rate: rate,
             item_total: itemTotal,
         };
@@ -314,7 +322,7 @@ const NewBillScreen = ({ navigation, route }) => {
             Toast.show({
                 type: 'error',
                 text1: 'Bill Creation Failed',
-                text2: error.response?.data?.detail || 'Please try again',
+                text2: formatErrorMessage(error.response?.data?.detail) || 'Please try again',
             });
         } finally {
             setLoading(false);

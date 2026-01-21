@@ -1,6 +1,7 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { login as apiLogin } from '../api/endpoints';
+import { formatErrorMessage } from '../utils/formatError';
 
 const AuthContext = createContext({});
 
@@ -46,7 +47,7 @@ export const AuthProvider = ({ children }) => {
             console.error('Login error:', error);
             return {
                 success: false,
-                error: error.response?.data?.detail || 'Login failed. Please try again.',
+                error: formatErrorMessage(error.response?.data?.detail) || 'Login failed. Please try again.',
             };
         }
     };
