@@ -202,24 +202,54 @@ class WowSQLTable:
             
             result = self.table.insert(processed_data)
             
-            # WowSQL SDK returns: {'id': X, 'message': 'Record created successfully'}
+            # Log for debugging
+            print(f"[WowSQL] insert result type={type(result).__name__}, result={result}")
+            
+            # Extract ID using multiple strategies
             inserted_id = None
             
-            if isinstance(result, dict) and "id" in result:
-                inserted_id = result["id"]
-            elif hasattr(result, 'id'):
+            # Strategy 1: Direct dict with 'id' key (WowSQL SDK typical response)
+            if isinstance(result, dict):
+                if "id" in result:
+                    inserted_id = result["id"]
+                elif "data" in result and isinstance(result["data"], dict):
+                    inserted_id = result["data"].get("id")
+                elif "data" in result and isinstance(result["data"], list) and result["data"]:
+                    inserted_id = result["data"][0].get("id")
+            
+            # Strategy 2: Object with .id attribute
+            if inserted_id is None and hasattr(result, 'id') and result.id is not None:
                 inserted_id = result.id
+            
+            # Strategy 3: Object with .data attribute
+            if inserted_id is None and hasattr(result, 'data') and result.data:
+                if isinstance(result.data, dict):
+                    inserted_id = result.data.get("id")
+                elif isinstance(result.data, list) and result.data:
+                    inserted_id = result.data[0].get("id")
+            
+            print(f"[WowSQL] extracted inserted_id={inserted_id}")
             
             if inserted_id is not None:
                 # Fetch and return the complete inserted record
                 fetched = self.find_one(id=inserted_id)
                 if fetched:
+                    print(f"[WowSQL] returning fetched record with id={fetched.get('id')}")
                     return fetched
                 # Fallback: return processed data with ID
                 processed_data["id"] = inserted_id
                 return processed_data
             
-            # Fallback: if no ID found, return processed data
+            # Strategy 4: If all else fails, fetch the most recently created record
+            # This is a last resort and may not be 100% reliable under high concurrency
+            print("[WowSQL] No ID found, attempting to fetch most recent record")
+            all_records = self.find(order_by="id", order_dir="desc", limit=1)
+            if all_records:
+                print(f"[WowSQL] returning most recent record with id={all_records[0].get('id')}")
+                return all_records[0]
+            
+            # Ultimate fallback: return processed data without ID (will likely cause issues)
+            print("[WowSQL] WARNING: Could not determine inserted record ID")
             return processed_data
         except Exception as e:
             print(f"WowSQL insert error: {e}")
