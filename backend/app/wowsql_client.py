@@ -202,14 +202,34 @@ class WowSQLTable:
             
             result = self.table.insert(processed_data)
             
-            # Return inserted record with ID
+            # Extract ID from various possible response formats
+            inserted_id = None
+            
             if hasattr(result, 'id'):
-                processed_data["id"] = result.id
+                inserted_id = result.id
+            elif hasattr(result, 'data'):
+                # SDK response object with .data attribute
+                if isinstance(result.data, dict):
+                    inserted_id = result.data.get("id")
+                elif isinstance(result.data, list) and len(result.data) > 0:
+                    inserted_id = result.data[0].get("id")
             elif isinstance(result, dict):
                 if "id" in result:
-                    processed_data["id"] = result["id"]
-                elif "data" in result and isinstance(result["data"], dict):
-                    processed_data["id"] = result["data"].get("id")
+                    inserted_id = result["id"]
+                elif "data" in result:
+                    if isinstance(result["data"], dict):
+                        inserted_id = result["data"].get("id")
+                    elif isinstance(result["data"], list) and len(result["data"]) > 0:
+                        inserted_id = result["data"][0].get("id")
+            elif isinstance(result, list) and len(result) > 0:
+                inserted_id = result[0].get("id")
+            
+            if inserted_id is not None:
+                processed_data["id"] = inserted_id
+                # Fetch the complete record to return proper data
+                fetched = self.find_one(id=inserted_id)
+                if fetched:
+                    return fetched
             
             return processed_data
         except Exception as e:
