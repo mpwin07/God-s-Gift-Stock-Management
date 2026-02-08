@@ -36,7 +36,7 @@ const BillDetailScreen = ({ route, navigation }) => {
         try {
             const [billData, paymentData] = await Promise.all([
                 getBillById(billId),
-                getPaymentByBill(billId),
+                getPaymentByBill(billId).catch(() => null), // Don't fail if payment not found
             ]);
 
             // Defensive checks
@@ -46,14 +46,25 @@ const BillDetailScreen = ({ route, navigation }) => {
                 return;
             }
 
-            setBill(billData);
+            // Parse items if they're a JSON string
+            let parsedBillData = { ...billData };
+            if (typeof billData.items === 'string') {
+                try {
+                    parsedBillData.items = JSON.parse(billData.items);
+                } catch (e) {
+                    console.error('Failed to parse items JSON:', e);
+                    parsedBillData.items = [];
+                }
+            }
+
+            setBill(parsedBillData);
             setPayment(paymentData ?? null);
             if (paymentData?.amount_paid != null) {
                 setAmountPaid(paymentData.amount_paid.toString());
             }
         } catch (error) {
             console.error('Error loading bill details:', error);
-            Alert.alert('Error', 'Failed to load bill details');
+            Alert.alert('Error', error?.message || 'Failed to load bill details');
             navigation.goBack();
         } finally {
             setLoading(false);
@@ -212,6 +223,12 @@ const BillDetailScreen = ({ route, navigation }) => {
 
     const handleUpdatePayment = async () => {
         try {
+            // Check if payment exists before updating
+            if (!payment || !payment.id) {
+                Alert.alert('Error', 'Payment record not found');
+                return;
+            }
+
             const amount = parseFloat(amountPaid);
             if (isNaN(amount) || amount < 0) {
                 Alert.alert('Error', 'Invalid amount');
@@ -226,9 +243,10 @@ const BillDetailScreen = ({ route, navigation }) => {
             Alert.alert('Success', 'Payment updated successfully');
             setShowPaymentModal(false);
             const updatedPayment = await getPaymentByBill(billId);
-            setPayment(updatedPayment); // Specific reload
+            setPayment(updatedPayment ?? null);
         } catch (error) {
-            Alert.alert('Error', formatErrorMessage(error.response?.data?.detail) || 'Failed to update payment');
+            const errorMsg = formatErrorMessage(error?.response?.data?.detail) || error?.message || 'Failed to update payment';
+            Alert.alert('Error', errorMsg);
         }
     };
 
@@ -287,7 +305,7 @@ const BillDetailScreen = ({ route, navigation }) => {
 
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>Items</Text>
-                    {bill.items.map((item, index) => (
+                    {(Array.isArray(bill.items) ? bill.items : []).map((item, index) => (
                         <BillItem
                             key={index}
                             item={item}
