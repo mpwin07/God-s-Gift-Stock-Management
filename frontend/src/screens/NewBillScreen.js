@@ -324,7 +324,7 @@ const NewBillScreen = ({ navigation, route }) => {
                 text1: 'Bill Creation Failed',
                 text2: formatErrorMessage(error.response?.data?.detail) || 'Please try again',
             });
-        } finally {
+            // Only reset loading on error - on success we navigate away so keep button disabled
             setLoading(false);
         }
     };

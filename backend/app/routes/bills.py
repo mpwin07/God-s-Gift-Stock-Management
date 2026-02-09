@@ -20,20 +20,22 @@ def bill_helper(bill: dict) -> dict:
 
 
 async def generate_bill_number() -> str:
-    """Generate unique bill number: BILL-YYYYMMDD-XXXX"""
-    sequences_table = get_sequences_table()
+    """Generate unique bill number: BILL-YYYYMMDD-XXXX
+    
+    Uses a robust approach: count today's bills to determine the next sequence number.
+    This avoids issues with the sequence table's id not being returned.
+    """
+    bills_table = get_bills_table()
     today = datetime.utcnow()
     date_str = today.strftime("%Y%m%d")
     
-    # Find or create sequence for today
-    seq_record = sequences_table.find_one(filters={"date_key": date_str})
+    # Get all bills from today to count them
+    today_prefix = f"BILL-{date_str}-"
+    all_bills = bills_table.find(limit=500)  # Get recent bills
     
-    if seq_record:
-        new_seq = seq_record["sequence"] + 1
-        sequences_table.update_one(seq_record["id"], {"sequence": new_seq})
-    else:
-        new_seq = 1
-        sequences_table.insert_one({"date_key": date_str, "sequence": 1})
+    # Count bills that match today's date prefix
+    today_bills = [b for b in all_bills if b.get("bill_number", "").startswith(today_prefix)]
+    new_seq = len(today_bills) + 1
     
     bill_number = f"BILL-{date_str}-{new_seq:04d}"
     return bill_number
@@ -126,6 +128,13 @@ async def create_bill(bill: BillCreate):
         }
         
         new_bill = bills_table.insert_one(bill_doc)
+        
+        # Handle case where insert doesn't return id
+        if not new_bill or "id" not in new_bill:
+            # Fallback: Query for the bill we just created by bill_number
+            new_bill = bills_table.find_one(filters={"bill_number": bill_number})
+            if not new_bill or "id" not in new_bill:
+                raise Exception("Failed to retrieve created bill ID")
         
         # Create payment record
         payment_doc = {
